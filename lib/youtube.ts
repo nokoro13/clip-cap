@@ -1,0 +1,117 @@
+import ytdl from '@distube/ytdl-core';
+import { parseYouTubeUrl } from './video-utils';
+
+export type YouTubeVideoInfo = {
+  id: string;
+  title: string;
+  description: string;
+  duration: number;
+  thumbnailUrl: string;
+  channelName: string;
+  viewCount: number;
+  uploadDate: string;
+};
+
+/**
+ * Get video information from YouTube URL
+ */
+export async function getYouTubeVideoInfo(url: string): Promise<YouTubeVideoInfo> {
+  const videoId = parseYouTubeUrl(url);
+  if (!videoId) {
+    throw new Error('Invalid YouTube URL');
+  }
+
+  const info = await ytdl.getInfo(url);
+  const videoDetails = info.videoDetails;
+
+  return {
+    id: videoId,
+    title: videoDetails.title,
+    description: videoDetails.description || '',
+    duration: parseInt(videoDetails.lengthSeconds, 10),
+    thumbnailUrl: videoDetails.thumbnails[videoDetails.thumbnails.length - 1]?.url || '',
+    channelName: videoDetails.author.name,
+    viewCount: parseInt(videoDetails.viewCount, 10),
+    uploadDate: videoDetails.uploadDate || '',
+  };
+}
+
+/**
+ * Get the best audio stream URL from YouTube video
+ * This can be used to extract audio for transcription
+ */
+export async function getYouTubeAudioUrl(url: string): Promise<string> {
+  const info = await ytdl.getInfo(url);
+  
+  const audioFormats = ytdl.filterFormats(info.formats, 'audioonly');
+  if (audioFormats.length === 0) {
+    throw new Error('No audio stream found for this video');
+  }
+
+  // Sort by audio quality and get the best one
+  const sortedFormats = audioFormats.sort((a, b) => {
+    const aBitrate = a.audioBitrate || 0;
+    const bBitrate = b.audioBitrate || 0;
+    return bBitrate - aBitrate;
+  });
+
+  const bestAudio = sortedFormats[0];
+  if (!bestAudio.url) {
+    throw new Error('Could not get audio URL');
+  }
+
+  return bestAudio.url;
+}
+
+/**
+ * Get the best video stream URL (for preview/playback)
+ */
+export async function getYouTubeVideoUrl(url: string): Promise<string> {
+  const info = await ytdl.getInfo(url);
+  
+  // Get formats with both video and audio
+  const formats = info.formats.filter(
+    (f) => f.hasVideo && f.hasAudio && f.container === 'mp4'
+  );
+
+  if (formats.length === 0) {
+    // Fallback to any format with video
+    const videoFormats = ytdl.filterFormats(info.formats, 'videoandaudio');
+    if (videoFormats.length > 0 && videoFormats[0].url) {
+      return videoFormats[0].url;
+    }
+    throw new Error('No suitable video format found');
+  }
+
+  // Sort by quality (prefer 720p or lower for faster loading)
+  const sortedFormats = formats.sort((a, b) => {
+    const aHeight = a.height || 0;
+    const bHeight = b.height || 0;
+    // Prefer 720p
+    const aScore = Math.abs(aHeight - 720);
+    const bScore = Math.abs(bHeight - 720);
+    return aScore - bScore;
+  });
+
+  const bestFormat = sortedFormats[0];
+  if (!bestFormat.url) {
+    throw new Error('Could not get video URL');
+  }
+
+  return bestFormat.url;
+}
+
+/**
+ * Validate if a YouTube URL is accessible and get basic info
+ */
+export async function validateYouTubeUrl(url: string): Promise<boolean> {
+  try {
+    const videoId = parseYouTubeUrl(url);
+    if (!videoId) return false;
+    
+    await ytdl.getBasicInfo(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
