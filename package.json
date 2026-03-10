@@ -11,7 +11,6 @@
 		"remotion:render": "remotion render HelloWorld out/video.mp4 --config remotion.config.ts"
 	},
 	"dependencies": {
-		"@distube/ytdl-core": "^4.16.12",
 		"@remotion/captions": "4.0.434",
 		"@remotion/cli": "4.0.434",
 		"@remotion/google-fonts": "^4.0.434",
