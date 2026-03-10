@@ -1,0 +1,17 @@
+node_modules
+.next
+.turbo
+.git
+.gitignore
+npm-debug.log
+yarn-error.log
+pnpm-debug.log
+
+Dockerfile
+.dockerignore
+
+*.log
+
+.env
+.env.*
+

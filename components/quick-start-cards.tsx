@@ -165,7 +165,9 @@ export function QuickStartCards({ className }: QuickStartCardsProps) {
     const projectId = `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     // Navigate to projects page with YouTube URL - processing will happen there
-    router.push(`/projects/${projectId}?youtubeUrl=${encodeURIComponent(url)}`);
+    router.push(
+      `/projects/${projectId}?youtubeUrl=${encodeURIComponent(url)}&experienceId=${encodeURIComponent(experienceId)}`
+    );
   };
 
   const handleGoogleDriveImport = () => {

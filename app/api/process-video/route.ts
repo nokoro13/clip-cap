@@ -1,4 +1,7 @@
+import fs from 'node:fs';
 import { NextRequest, NextResponse } from 'next/server';
+import { analyzeViralFromInput } from '@/lib/analyze-viral';
+import { downloadYouTubeAudioToFile } from '@/lib/download-youtube-audio';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -35,47 +38,40 @@ export async function POST(request: NextRequest) {
       }
 
       const { video } = await infoResponse.json();
+      const standardUrl = `https://www.youtube.com/watch?v=${video.id}`;
 
-      // Create form data for viral analysis
-      const formData = new FormData();
-      if (video.audioUrl) {
-        formData.append('audioUrl', video.audioUrl);
-        formData.append('duration', video.duration.toString());
+      // Download audio with yt-dlp to a temp file (avoids long streaming fetch that can drop)
+      const { filePath, cleanup } = await downloadYouTubeAudioToFile(standardUrl);
+      try {
+        const buffer = fs.readFileSync(filePath);
+        const audioFile = new File([buffer], 'audio.mp3', { type: 'audio/mpeg' });
+
+        const analysis = await analyzeViralFromInput({
+          file: audioFile,
+          videoDuration: video.duration?.toString(),
+        });
+
+        return NextResponse.json({
+          success: true,
+          project: {
+            id,
+            title: video.title,
+            videoUrl: video.videoUrl,
+            audioUrl: video.audioUrl,
+            thumbnailUrl: video.thumbnailUrl,
+            duration: video.duration,
+            channelName: video.channelName,
+            captions: analysis.captions,
+            clips: analysis.clips,
+            fullTranscript: analysis.fullTranscript,
+            status: 'completed',
+            createdAt: Date.now(),
+            youtubeVideoId: video.id,
+          },
+        });
+      } finally {
+        cleanup();
       }
-
-      // Analyze for viral moments
-      const analyzeResponse = await fetch(new URL('/api/analyze-viral', request.url), {
-        method: 'POST',
-        body: formData,
-      });
-
-      if (!analyzeResponse.ok) {
-        const error = await analyzeResponse.json();
-        return NextResponse.json(
-          { error: error.error || 'Failed to analyze video' },
-          { status: analyzeResponse.status }
-        );
-      }
-
-      const analysis = await analyzeResponse.json();
-
-      return NextResponse.json({
-        success: true,
-        project: {
-          id,
-          title: video.title,
-          videoUrl: video.videoUrl,
-          audioUrl: video.audioUrl,
-          thumbnailUrl: video.thumbnailUrl,
-          duration: video.duration,
-          channelName: video.channelName,
-          captions: analysis.captions,
-          clips: analysis.clips,
-          fullTranscript: analysis.fullTranscript,
-          status: 'completed',
-          createdAt: Date.now(),
-        },
-      });
     }
 
     // For direct video URL, return a simpler response

@@ -27,6 +27,7 @@ import {
 } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { getVideoBlobUrl } from '@/lib/video-storage';
+import { addProjectToIndex } from '@/lib/project-index';
 import type { Caption } from '@remotion/captions';
 
 type ClipStatus = 'all' | 'approved' | 'rejected' | 'exported' | 'archived';
@@ -56,6 +57,8 @@ type ProjectData = {
   fullTranscript: string;
   status: 'processing' | 'completed' | 'error';
   createdAt: number;
+  youtubeVideoId?: string;
+  experienceId?: string;
 };
 
 function formatDuration(ms: number): string {
@@ -210,6 +213,39 @@ export default function ProjectGalleryPage() {
           // ignore
         }
       }
+
+      // If we have a stored project with youtubeVideoId, get a fresh stream URL (expiring URLs break playback)
+      if (storedProject) {
+        try {
+          const parsed = JSON.parse(storedProject);
+          if (parsed.youtubeVideoId) {
+            try {
+              const freshRes = await fetch('/api/youtube-info', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  url: `https://www.youtube.com/watch?v=${parsed.youtubeVideoId}`,
+                }),
+              });
+              if (freshRes.ok) {
+                const { video: v } = await freshRes.json();
+                if (v?.videoUrl) {
+                  resolvedVideoUrl = v.videoUrl;
+                  sessionStorage.setItem(`video-${projectId}`, v.videoUrl);
+                }
+              }
+            } catch {
+              // keep existing resolvedVideoUrl or parsed.videoUrl fallback
+            }
+            if (!resolvedVideoUrl) {
+              resolvedVideoUrl = parsed.videoUrl || parsed.blobUrl || null;
+            }
+          }
+        } catch {
+          // ignore
+        }
+      }
+
       if (resolvedVideoUrl) setVideoUrl(resolvedVideoUrl);
 
       if (storedProject) {
@@ -234,6 +270,7 @@ export default function ProjectGalleryPage() {
 
       // Check if we have a YouTube URL to process
       const youtubeUrl = searchParams.get('youtubeUrl');
+      const experienceIdFromUrl = searchParams.get('experienceId');
       if (youtubeUrl) {
         try {
           const response = await fetch('/api/process-video', {
@@ -250,6 +287,7 @@ export default function ProjectGalleryPage() {
           const data = await response.json();
           const projectData: ProjectData = {
             ...data.project,
+            experienceId: experienceIdFromUrl || undefined,
             clips: (data.project.clips || []).map((clip: ViralClip) => ({
               ...clip,
               status: 'all',
@@ -261,6 +299,17 @@ export default function ProjectGalleryPage() {
           setProject(projectData);
           if (projectData.videoUrl) {
             setVideoUrl(projectData.videoUrl);
+            sessionStorage.setItem(`video-${projectId}`, projectData.videoUrl);
+          }
+          if (experienceIdFromUrl) {
+            setExperienceId(experienceIdFromUrl);
+            addProjectToIndex(experienceIdFromUrl, {
+              id: projectId,
+              title: projectData.title,
+              type: 'project',
+              duration: projectData.duration,
+              clipsCount: projectData.clips?.length ?? 0,
+            });
           }
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Failed to process video');
@@ -314,11 +363,12 @@ export default function ProjectGalleryPage() {
       title: clip.title,
       clipStartMs: clip.startMs,
       clipEndMs: clip.endMs,
-      sourceProjectId: project.id, // For navigating back to the gallery
-      experienceId, // For navigating back to experiences if needed
+      sourceProjectId: project.id,
+      experienceId,
+      youtubeVideoId: project.youtubeVideoId, // So editor can fetch a fresh stream URL
     };
 
-    // Store the video URL in sessionStorage for the editor to use
+    // Store the video URL in sessionStorage for the editor (editor will refresh from API if youtubeVideoId)
     sessionStorage.setItem(`video-${clip.id}`, videoUrl);
     localStorage.setItem(`project-${clip.id}`, JSON.stringify(editorData));
 
