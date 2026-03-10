@@ -1,7 +1,7 @@
 import { Button } from "@whop/react/components";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { getWhopClient } from "@/lib/whop-sdk";
+import { whopsdk } from "@/lib/whop-sdk";
 import { QuickStartCards } from "@/components/quick-start-cards";
 import { RecentProjectsGallery } from "@/components/recent-projects-gallery";
 
@@ -12,7 +12,6 @@ export default async function ExperiencePage({
 }) {
 	const { experienceId } = await params;
 	// Ensure the user is logged in on whop.
-	const whopsdk = getWhopClient();
 	const { userId } = await whopsdk.verifyUserToken(await headers());
 
 	// Fetch the neccessary data we want from whop.
