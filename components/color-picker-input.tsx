@@ -1,7 +1,12 @@
 "use client";
 
 import * as React from "react";
-import { ColorPicker, useColor, ColorService } from "react-color-palette";
+import {
+  ColorPicker,
+  useColor,
+  ColorService,
+  type IColor,
+} from "react-color-palette";
 import "react-color-palette/css";
 import {
   Popover,
@@ -29,7 +34,7 @@ export const ColorPickerInput: React.FC<{
   }, [open, value, setColor]);
 
   const handleChange = React.useCallback(
-    (c: { hex: string }) => {
+    (c: IColor) => {
       setColor(c);
       onChange(c.hex);
     },
