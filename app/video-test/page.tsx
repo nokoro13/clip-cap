@@ -20,40 +20,13 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ColorPickerInput } from '@/components/color-picker-input';
 import { cn } from '@/lib/utils';
 
 const FPS = 30;
 const TOTAL_FRAMES = 300;
 
 const SUBTITLE_COLORS = ['#3b82f6', '#8b5cf6', '#ec4899', '#f97316', '#22c55e', '#06b6d4'];
-
-const ColorInput: React.FC<{
-  value: string;
-  onChange: (value: string) => void;
-  className?: string;
-}> = ({ value, onChange, className }) => {
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  if (!mounted) {
-    return (
-      <div
-        className={cn('size-9 rounded-md border border-input', className)}
-        style={{ backgroundColor: value }}
-      />
-    );
-  }
-  return (
-    <input
-      type="color"
-      value={value}
-      onChange={(e) => onChange(e.target.value)}
-      className={cn(
-        'size-9 cursor-pointer rounded-md border border-input bg-transparent p-0.5',
-        className
-      )}
-    />
-  );
-};
 
 const PRESET_STYLES: {
   id: string;
@@ -361,21 +334,21 @@ export default function VideoTestPage() {
               <div className="flex gap-3">
                 <div className="space-y-1">
                   <span className="text-[10px] text-muted-foreground">Text</span>
-                  <ColorInput
+                  <ColorPickerInput
                     value={style.textColor}
                     onChange={(v) => updateStyle('textColor', v)}
                   />
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] text-muted-foreground">BG</span>
-                  <ColorInput
+                  <ColorPickerInput
                     value={style.backgroundColor}
                     onChange={(v) => updateStyle('backgroundColor', v)}
                   />
                 </div>
                 <div className="space-y-1">
                   <span className="text-[10px] text-muted-foreground">Stroke</span>
-                  <ColorInput
+                  <ColorPickerInput
                     value={style.strokeColor}
                     onChange={(v) => updateStyle('strokeColor', v)}
                   />
