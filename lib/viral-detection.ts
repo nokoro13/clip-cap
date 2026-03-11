@@ -1,17 +1,7 @@
-import OpenAI from 'openai';
 import type { Caption } from '@remotion/captions';
 import type { ViralClip } from './video-utils';
 import { generateId } from './video-utils';
-
-function getOpenAI(): OpenAI {
-  const key = process.env.OPENAI_API_KEY;
-  if (!key) {
-    throw new Error(
-      'Missing credentials. Please pass an `apiKey`, or set the `OPENAI_API_KEY` environment variable.'
-    );
-  }
-  return new OpenAI({ apiKey: key });
-}
+import { openai } from '@/lib/openai';
 
 export type ViralMoment = {
   startMs: number;
@@ -74,7 +64,7 @@ ${transcriptWithTimestamps}
 Find the top 5-10 most viral moments from this content.`;
 
   try {
-    const response = await getOpenAI().chat.completions.create({
+    const response = await openai.chat.completions.create({
       model: 'gpt-4o',
       messages: [
         { role: 'system', content: VIRAL_DETECTION_PROMPT },

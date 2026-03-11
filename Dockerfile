@@ -21,8 +21,14 @@ RUN pnpm install --frozen-lockfile
 # Copy the rest of the app
 COPY . .
 
-# Production build
+# Production build (Railway passes service vars as build args; declare so next build can use them)
 ENV NODE_ENV=production
+ARG NEXT_PUBLIC_WHOP_APP_ID
+ENV NEXT_PUBLIC_WHOP_APP_ID=$NEXT_PUBLIC_WHOP_APP_ID
+ARG WHOP_API_KEY
+ENV WHOP_API_KEY=$WHOP_API_KEY
+ARG OPENAI_API_KEY
+ENV OPENAI_API_KEY=$OPENAI_API_KEY
 RUN pnpm run build
 
 # Ensure Next.js binds to all interfaces in the container
