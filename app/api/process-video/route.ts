@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeViralFromInput } from '@/lib/analyze-viral';
 import { downloadYouTubeAudioToFile } from '@/lib/download-youtube-audio';
+import { getYouTubeInfoFromYtDlp } from '@/lib/yt-dlp';
+import { parseYouTubeUrl } from '@/lib/video-utils';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -20,25 +22,29 @@ export async function POST(request: NextRequest) {
 
     const id = projectId || `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-    // If YouTube URL, first get the video info
+    // If YouTube URL, get video info directly (no internal fetch — avoids SSL issues on Railway)
     if (youtubeUrl) {
-      // Get video info from our youtube-info endpoint
-      const infoResponse = await fetch(new URL('/api/youtube-info', request.url), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ url: youtubeUrl }),
-      });
-
-      if (!infoResponse.ok) {
-        const error = await infoResponse.json();
+      const videoId = parseYouTubeUrl(youtubeUrl);
+      if (!videoId) {
         return NextResponse.json(
-          { error: error.error || 'Failed to get YouTube video info' },
-          { status: infoResponse.status }
+          { error: 'Invalid YouTube URL' },
+          { status: 400 }
         );
       }
 
-      const { video } = await infoResponse.json();
-      const standardUrl = `https://www.youtube.com/watch?v=${video.id}`;
+      const standardUrl = `https://www.youtube.com/watch?v=${videoId}`;
+      const video = await getYouTubeInfoFromYtDlp(standardUrl);
+
+      if (!video) {
+        console.error('Process video: yt-dlp returned no video for', standardUrl);
+        return NextResponse.json(
+          {
+            error:
+              'Unable to extract video from YouTube. This video may have restrictions or be unavailable. Try a different video or upload a file directly.',
+          },
+          { status: 422 }
+        );
+      }
 
       // Download audio with yt-dlp to a temp file (avoids long streaming fetch that can drop)
       const { filePath, cleanup } = await downloadYouTubeAudioToFile(standardUrl);
