@@ -2,9 +2,15 @@ import OpenAI from 'openai';
 import { openAiWhisperApiToCaptions } from '@remotion/openai-whisper';
 import type { Caption } from '@remotion/captions';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAI(): OpenAI {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    throw new Error(
+      'Missing credentials. Please pass an `apiKey`, or set the `OPENAI_API_KEY` environment variable.'
+    );
+  }
+  return new OpenAI({ apiKey: key });
+}
 
 const VIRAL_DETECTION_PROMPT = `You are an expert at identifying viral short-form video content. Analyze the following video transcript and identify the most engaging, shareable, and viral-worthy moments that would work well as TikTok, YouTube Shorts, or Instagram Reels clips.
 
@@ -95,7 +101,7 @@ export async function analyzeViralFromInput(
   }> = [];
 
   if (file) {
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await getOpenAI().audio.transcriptions.create({
       file,
       model: 'whisper-1',
       response_format: 'verbose_json',
@@ -136,7 +142,7 @@ export async function analyzeViralFromInput(
     const blob = await response.blob();
     const audioFile = new File([blob], 'audio.mp3', { type: 'audio/mpeg' });
 
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await getOpenAI().audio.transcriptions.create({
       file: audioFile,
       model: 'whisper-1',
       response_format: 'verbose_json',
@@ -184,7 +190,7 @@ ${transcriptWithTimestamps}
 
 Find the top 5-10 most viral moments from this content.`;
 
-  const gptResponse = await openai.chat.completions.create({
+  const gptResponse = await getOpenAI().chat.completions.create({
     model: 'gpt-4o',
     messages: [
       { role: 'system', content: VIRAL_DETECTION_PROMPT },

@@ -2,9 +2,15 @@ import OpenAI from 'openai';
 import { openAiWhisperApiToCaptions } from '@remotion/openai-whisper';
 import type { Caption } from '@remotion/captions';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAI(): OpenAI {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    throw new Error(
+      'Missing credentials. Please pass an `apiKey`, or set the `OPENAI_API_KEY` environment variable.'
+    );
+  }
+  return new OpenAI({ apiKey: key });
+}
 
 export type TranscriptionResult = {
   captions: Caption[];
@@ -17,7 +23,7 @@ export type TranscriptionResult = {
  * Returns word-level timestamps in Remotion Caption format
  */
 export async function transcribeFile(file: File): Promise<TranscriptionResult> {
-  const transcription = await openai.audio.transcriptions.create({
+  const transcription = await getOpenAI().audio.transcriptions.create({
     file: file,
     model: 'whisper-1',
     response_format: 'verbose_json',

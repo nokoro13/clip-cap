@@ -2,9 +2,15 @@ import { NextRequest, NextResponse } from 'next/server';
 import OpenAI from 'openai';
 import { openAiWhisperApiToCaptions } from '@remotion/openai-whisper';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
+function getOpenAI(): OpenAI {
+  const key = process.env.OPENAI_API_KEY;
+  if (!key) {
+    throw new Error(
+      'Missing credentials. Please pass an `apiKey`, or set the `OPENAI_API_KEY` environment variable.'
+    );
+  }
+  return new OpenAI({ apiKey: key });
+}
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -50,7 +56,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Transcribe using OpenAI Whisper with both word and segment timestamps
-    const transcription = await openai.audio.transcriptions.create({
+    const transcription = await getOpenAI().audio.transcriptions.create({
       file: file,
       model: 'whisper-1',
       response_format: 'verbose_json',
