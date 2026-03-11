@@ -1,7 +1,7 @@
 import { Button } from "@whop/react/components";
 import { headers } from "next/headers";
 import Link from "next/link";
-import { whopsdk } from "@/lib/whop-sdk";
+import { getWhopsdk } from "@/lib/whop-sdk";
 
 export default async function DashboardPage({
 	params,
@@ -9,6 +9,7 @@ export default async function DashboardPage({
 	params: Promise<{ companyId: string }>;
 }) {
 	const { companyId } = await params;
+	const whopsdk = getWhopsdk();
 	// Ensure the user is logged in on whop.
 	const { userId } = await whopsdk.verifyUserToken(await headers());
 
