@@ -214,32 +214,13 @@ export default function ProjectGalleryPage() {
         }
       }
 
-      // If we have a stored project with youtubeVideoId, get a fresh stream URL (expiring URLs break playback)
+      // If we have a stored project with youtubeVideoId, use our stream proxy (raw yt-dlp URLs are blocked in browser by CORS)
       if (storedProject) {
         try {
           const parsed = JSON.parse(storedProject);
           if (parsed.youtubeVideoId) {
-            try {
-              const freshRes = await fetch('/api/youtube-info', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  url: `https://www.youtube.com/watch?v=${parsed.youtubeVideoId}`,
-                }),
-              });
-              if (freshRes.ok) {
-                const { video: v } = await freshRes.json();
-                if (v?.videoUrl) {
-                  resolvedVideoUrl = v.videoUrl;
-                  sessionStorage.setItem(`video-${projectId}`, v.videoUrl);
-                }
-              }
-            } catch {
-              // keep existing resolvedVideoUrl or parsed.videoUrl fallback
-            }
-            if (!resolvedVideoUrl) {
-              resolvedVideoUrl = parsed.videoUrl || parsed.blobUrl || null;
-            }
+            resolvedVideoUrl = `/api/youtube-stream/${parsed.youtubeVideoId}`;
+            sessionStorage.setItem(`video-${projectId}`, resolvedVideoUrl);
           }
         } catch {
           // ignore
@@ -294,10 +275,14 @@ export default function ProjectGalleryPage() {
             })),
           };
 
-          // Store in localStorage
+          // Store in localStorage (keep raw videoUrl for reference; playback uses proxy URL)
           localStorage.setItem(`project-${projectId}`, JSON.stringify(projectData));
           setProject(projectData);
-          if (projectData.videoUrl) {
+          if (projectData.youtubeVideoId) {
+            const proxyUrl = `/api/youtube-stream/${projectData.youtubeVideoId}`;
+            setVideoUrl(proxyUrl);
+            sessionStorage.setItem(`video-${projectId}`, proxyUrl);
+          } else if (projectData.videoUrl) {
             setVideoUrl(projectData.videoUrl);
             sessionStorage.setItem(`video-${projectId}`, projectData.videoUrl);
           }

@@ -694,26 +694,14 @@ export default function EditorPage() {
           // ignore
         }
       }
-      // For YouTube-sourced clips, get a fresh stream URL (stored URL often expires or fails in player)
+      // For YouTube-sourced clips, use our stream proxy (raw yt-dlp URLs are blocked in browser by CORS)
       if (storedProject) {
         try {
           const p = JSON.parse(storedProject);
           if (p.youtubeVideoId) {
-            const freshRes = await fetch("/api/youtube-info", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                url: `https://www.youtube.com/watch?v=${p.youtubeVideoId}`,
-              }),
-            });
-            if (freshRes.ok) {
-              const { video } = await freshRes.json();
-              if (video?.videoUrl) {
-                initialVideoUrl = video.videoUrl;
-                if (typeof sessionStorage !== "undefined") {
-                  sessionStorage.setItem(`video-${projectId}`, video.videoUrl);
-                }
-              }
+            initialVideoUrl = `/api/youtube-stream/${p.youtubeVideoId}`;
+            if (typeof sessionStorage !== "undefined") {
+              sessionStorage.setItem(`video-${projectId}`, initialVideoUrl);
             }
           }
         } catch {
