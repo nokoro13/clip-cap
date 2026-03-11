@@ -136,7 +136,7 @@ function ClipVideoPreview({
 
   return (
     <div className="relative size-full">
-      {videoUrl ? (
+      {videoUrl && isPlaying ? (
         <video
           ref={videoRef}
           src={videoUrl}
@@ -147,7 +147,7 @@ function ClipVideoPreview({
         />
       ) : (
         <div className="flex size-full items-center justify-center bg-muted">
-          <span className="text-xs text-muted-foreground">No preview</span>
+          <span className="text-xs text-muted-foreground">Original preview</span>
         </div>
       )}
 
