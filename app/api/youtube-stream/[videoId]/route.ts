@@ -4,10 +4,30 @@ import { getYouTubeInfoFromYtDlp } from '@/lib/yt-dlp';
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+const STREAM_URL_CACHE_TTL_MS = 4 * 60 * 1000; // 4 minutes (YouTube URLs expire)
+const streamUrlCache = new Map<
+  string,
+  { url: string; expiresAt: number }
+>();
+
+function getCachedStreamUrl(videoId: string): string | null {
+  const entry = streamUrlCache.get(videoId);
+  if (!entry || Date.now() > entry.expiresAt) return null;
+  return entry.url;
+}
+
+function setCachedStreamUrl(videoId: string, url: string): void {
+  streamUrlCache.set(videoId, {
+    url,
+    expiresAt: Date.now() + STREAM_URL_CACHE_TTL_MS,
+  });
+}
+
 /**
  * Proxies YouTube video stream so the browser can play it (same-origin).
  * Direct yt-dlp stream URLs are blocked in the browser by CORS/referrer.
- * Supports Range requests for video seeking.
+ * Supports Range requests for video seeking. Caches stream URL to avoid
+ * calling yt-dlp on every Range request (which would be slow and can timeout).
  */
 export async function GET(
   request: NextRequest,
@@ -18,20 +38,25 @@ export async function GET(
     return NextResponse.json({ error: 'Missing videoId' }, { status: 400 });
   }
 
-  const standardUrl = `https://www.youtube.com/watch?v=${videoId}`;
-  const info = await getYouTubeInfoFromYtDlp(standardUrl);
-  if (!info?.videoUrl) {
-    return NextResponse.json(
-      { error: 'Could not get stream URL for this video' },
-      { status: 502 }
-    );
+  let streamUrl = getCachedStreamUrl(videoId);
+  if (!streamUrl) {
+    const standardUrl = `https://www.youtube.com/watch?v=${videoId}`;
+    const info = await getYouTubeInfoFromYtDlp(standardUrl);
+    if (!info?.videoUrl) {
+      return NextResponse.json(
+        { error: 'Could not get stream URL for this video' },
+        { status: 502 }
+      );
+    }
+    streamUrl = info.videoUrl;
+    setCachedStreamUrl(videoId, streamUrl);
   }
 
   const range = request.headers.get('range');
   const headers: Record<string, string> = {};
   if (range) headers['Range'] = range;
 
-  const streamRes = await fetch(info.videoUrl, {
+  const streamRes = await fetch(streamUrl, {
     headers,
     redirect: 'follow',
   });

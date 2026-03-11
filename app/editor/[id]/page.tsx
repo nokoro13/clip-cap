@@ -694,12 +694,15 @@ export default function EditorPage() {
           // ignore
         }
       }
-      // For YouTube-sourced clips, use our stream proxy (raw yt-dlp URLs are blocked in browser by CORS)
+      // For YouTube-sourced clips, use our stream proxy (raw yt-dlp URLs are blocked in browser by CORS).
+      // Use absolute URL so Remotion OffthreadVideo can load the video reliably.
       if (storedProject) {
         try {
           const p = JSON.parse(storedProject);
           if (p.youtubeVideoId) {
-            initialVideoUrl = `/api/youtube-stream/${p.youtubeVideoId}`;
+            const origin =
+              typeof window !== "undefined" ? window.location.origin : "";
+            initialVideoUrl = `${origin}/api/youtube-stream/${p.youtubeVideoId}`;
             if (typeof sessionStorage !== "undefined") {
               sessionStorage.setItem(`video-${projectId}`, initialVideoUrl);
             }
@@ -1167,8 +1170,8 @@ export default function EditorPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
-      {/* Header */}
-      <header className="flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
+      {/* Header - relative z-10 so back stays clickable */}
+      <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
         <div className="flex items-center gap-4">
           <Link
             href={
@@ -1178,7 +1181,8 @@ export default function EditorPage() {
                   ? `/experiences/${experienceId}` // Back to experience page
                   : "/" // Fallback to home
             }
-            className="text-muted-foreground hover:text-foreground"
+            className="cursor-pointer text-muted-foreground hover:text-foreground"
+            prefetch={false}
           >
             <ArrowLeft className="size-5" />
           </Link>

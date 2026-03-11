@@ -214,12 +214,15 @@ export default function ProjectGalleryPage() {
         }
       }
 
-      // If we have a stored project with youtubeVideoId, use our stream proxy (raw yt-dlp URLs are blocked in browser by CORS)
+      // If we have a stored project with youtubeVideoId, use our stream proxy (raw yt-dlp URLs are blocked in browser by CORS).
+      // Use absolute URL so video elements and Remotion can load reliably.
       if (storedProject) {
         try {
           const parsed = JSON.parse(storedProject);
           if (parsed.youtubeVideoId) {
-            resolvedVideoUrl = `/api/youtube-stream/${parsed.youtubeVideoId}`;
+            const origin =
+              typeof window !== 'undefined' ? window.location.origin : '';
+            resolvedVideoUrl = `${origin}/api/youtube-stream/${parsed.youtubeVideoId}`;
             sessionStorage.setItem(`video-${projectId}`, resolvedVideoUrl);
           }
         } catch {
@@ -279,7 +282,9 @@ export default function ProjectGalleryPage() {
           localStorage.setItem(`project-${projectId}`, JSON.stringify(projectData));
           setProject(projectData);
           if (projectData.youtubeVideoId) {
-            const proxyUrl = `/api/youtube-stream/${projectData.youtubeVideoId}`;
+            const origin =
+              typeof window !== 'undefined' ? window.location.origin : '';
+            const proxyUrl = `${origin}/api/youtube-stream/${projectData.youtubeVideoId}`;
             setVideoUrl(proxyUrl);
             sessionStorage.setItem(`video-${projectId}`, proxyUrl);
           } else if (projectData.videoUrl) {
@@ -414,13 +419,14 @@ export default function ProjectGalleryPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <header className="border-b border-border">
+      {/* Header - relative z-10 so back/edit stay clickable when many videos load */}
+      <header className="relative z-10 border-b border-border">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
           <div className="flex items-center gap-4">
             <Link
               href={experienceId ? `/experiences/${experienceId}` : '/'}
-              className="text-muted-foreground hover:text-foreground"
+              className="cursor-pointer text-muted-foreground hover:text-foreground"
+              prefetch={false}
             >
               <ArrowLeft className="size-5" />
             </Link>
@@ -561,13 +567,14 @@ export default function ProjectGalleryPage() {
                 )}
               </CardHeader>
 
-              {/* Actions */}
-              <CardContent className="flex gap-2 p-4 pt-0">
+              {/* Actions - relative z-10 so buttons stay clickable above video preview area */}
+              <CardContent className="relative z-10 flex gap-2 p-4 pt-0">
                 <Button
                   size="sm"
                   variant="secondary"
                   className="flex-1"
                   onClick={() => handleEditClip(clip)}
+                  type="button"
                 >
                   <Edit className="mr-1 size-3" />
                   Edit
