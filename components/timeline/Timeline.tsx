@@ -21,6 +21,7 @@ import {
 import {
   calculateTimelineWidth,
   pixelsToFrames,
+  framesToPixels,
   clamp,
   calculateZoomToFit,
 } from "./utils";
@@ -30,7 +31,8 @@ export const Timeline: React.FC<TimelineProps> = ({
   setSubtitles,
   selectedSubtitle,
   setSelectedSubtitle,
-  currentFrame,
+  playerRef,
+  currentFrame: currentFrameProp = 0,
   videoDuration,
   fps,
   videoUrl,
@@ -39,8 +41,56 @@ export const Timeline: React.FC<TimelineProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [dragState, setDragState] = useState<DragState | null>(null);
+  const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const tracksRef = useRef<HTMLDivElement>(null);
+
+  // Playhead: when playerRef is provided, subscribe to player here so only Timeline re-renders on frame update (editor + Player stay stable)
+  const [syncedFrame, setSyncedFrame] = useState(0);
+  useEffect(() => {
+    if (!playerRef?.current) return;
+    const player = playerRef.current;
+    const handleFrameUpdate = () => setSyncedFrame(player.getCurrentFrame());
+    setSyncedFrame(player.getCurrentFrame());
+    player.addEventListener("frameupdate", handleFrameUpdate);
+    return () => player.removeEventListener("frameupdate", handleFrameUpdate);
+  }, [playerRef, videoUrl, videoDuration]);
+
+  const currentFrame = playerRef ? syncedFrame : currentFrameProp;
+
+  // Draggable playhead: convert mouse X to frame and seek
+  useEffect(() => {
+    if (!isDraggingPlayhead || !tracksRef.current) return;
+
+    const handleMouseMove = (e: MouseEvent) => {
+      if (!tracksRef.current) return;
+      const rect = tracksRef.current.getBoundingClientRect();
+      const timelineX = e.clientX - rect.left + tracksRef.current.scrollLeft;
+      const frame = Math.round(
+        clamp(
+          pixelsToFrames(timelineX, fps, zoom),
+          0,
+          videoDuration
+        )
+      );
+      onSeek(frame);
+    };
+
+    const handleMouseUp = () => {
+      setIsDraggingPlayhead(false);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+
+    document.body.style.cursor = "ew-resize";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handleMouseMove);
+    window.addEventListener("mouseup", handleMouseUp);
+    return () => {
+      window.removeEventListener("mousemove", handleMouseMove);
+      window.removeEventListener("mouseup", handleMouseUp);
+    };
+  }, [isDraggingPlayhead, fps, zoom, videoDuration, onSeek]);
 
   // Initialize zoom to fit on mount
   useEffect(() => {
@@ -261,10 +311,42 @@ export const Timeline: React.FC<TimelineProps> = ({
       <div className="flex-1 overflow-hidden">
         <div
           ref={tracksRef}
-          className="overflow-x-auto overflow-y-auto h-full"
+          className="overflow-x-auto overflow-y-auto h-full relative"
           style={{ width: "100%" }}
         >
-          <div style={{ width: timelineWidth, minWidth: "100%" }}>
+          <div
+            className="relative"
+            style={{ width: timelineWidth, minWidth: "100%" }}
+          >
+            {/* Full-height playhead: syncs with Remotion Player, draggable to scrub */}
+            <div
+              className={cn(
+                "absolute top-0 bottom-0 z-20 flex justify-center",
+                "cursor-ew-resize select-none touch-none",
+                isDraggingPlayhead && "pointer-events-none"
+              )}
+              style={{
+                left: framesToPixels(currentFrame, fps, zoom),
+                transform: "translateX(-50%)",
+              }}
+              onMouseDown={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setIsDraggingPlayhead(true);
+              }}
+              aria-hidden
+              title={`Frame ${currentFrame} – drag to scrub`}
+            >
+              {/* Wider hit area for easier grabbing */}
+              <div className="absolute inset-y-0 w-6 -left-3" />
+              {/* Line */}
+              <div className="absolute top-0 bottom-0 w-0.5 rounded-full bg-primary shadow-md" />
+              {/* Head */}
+              <div
+                className="absolute top-0 left-1/2 w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background shadow-md"
+                aria-hidden
+              />
+            </div>
             <TimelineRuler
               videoDuration={videoDuration}
               fps={fps}

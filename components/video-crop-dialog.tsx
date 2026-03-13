@@ -28,6 +28,19 @@ const PORTRAIT_THRESHOLD = 0.7; // aspect width/height < this => 9:16
 // For 16:9 container, 9:16 frame height=100%, frame width = (9/16)^2 of container ≈ 31.64%
 const FRAME_WIDTH_PERCENT = (9 / 16) * (9 / 16) * 100;
 
+/** For landscape 16:9, the scaled video is centered and has width (scale*100%) of container. Return [min, max] for frameXPercent so the 9:16 frame stays within the video. */
+function landscapeFrameXBounds(
+  scale: number,
+  frameWidthPercent: number = FRAME_WIDTH_PERCENT
+): [number, number] {
+  const slot = 100 - frameWidthPercent; // horizontal travel range for frame (in %)
+  const videoLeft = 50 * (1 - scale);
+  const videoRight = 50 * (1 + scale);
+  const min = Math.max(0, videoLeft / slot);
+  const max = Math.min(1, (videoRight - frameWidthPercent) / slot);
+  return [min, max];
+}
+
 type VideoCropDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -114,13 +127,23 @@ export function VideoCropDialog({
   const isPortrait = effectiveAspect < PORTRAIT_THRESHOLD;
   const minScale = MIN_SCALE;
 
+  // For 16:9 in 9:16, the editor shows "contain" (letterbox) when transform is identity (1,0,0).
+  // The dialog uses cover math, so scale=1 would show zoomed. Use contain scale so preview matches editor.
+  const isLandscapeIdentity =
+    !isPortrait &&
+    currentTransform.scale === 1 &&
+    currentTransform.offsetX === 0 &&
+    currentTransform.offsetY === 0;
+
   const { frameXPercent: initX, frameYPercent: initY, scale: initScale } =
-    transformToFramePosition(
-      currentTransform,
-      compositionWidth,
-      compositionHeight,
-      effectiveAspect
-    );
+    isLandscapeIdentity
+      ? { frameXPercent: 0.5, frameYPercent: 0.5, scale: minScale }
+      : transformToFramePosition(
+          currentTransform,
+          compositionWidth,
+          compositionHeight,
+          effectiveAspect
+        );
 
   const [scale, setScale] = useState(initScale);
   const [frameXPercent, setFrameXPercent] = useState(initX);
@@ -149,18 +172,40 @@ export function VideoCropDialog({
 
   useEffect(() => {
     if (open) {
+      const isLandscapeIdentitySync =
+        !isPortrait &&
+        currentTransform.scale === 1 &&
+        currentTransform.offsetX === 0 &&
+        currentTransform.offsetY === 0;
       const { frameXPercent: x, frameYPercent: y, scale: s } =
-        transformToFramePosition(
-          currentTransform,
-          compositionWidth,
-          compositionHeight,
-          effectiveAspect
-        );
+        isLandscapeIdentitySync
+          ? { frameXPercent: 0.5, frameYPercent: 0.5, scale: minScale }
+          : transformToFramePosition(
+              currentTransform,
+              compositionWidth,
+              compositionHeight,
+              effectiveAspect
+            );
       setScale(s);
-      setFrameXPercent(x);
+      if (!isPortrait) {
+        const [minX, maxX] = landscapeFrameXBounds(s);
+        setFrameXPercent(Math.max(minX, Math.min(maxX, x)));
+      } else {
+        setFrameXPercent(x);
+      }
       setFrameYPercent(y);
     }
-  }, [open, currentTransform, compositionWidth, compositionHeight, effectiveAspect, isPortrait]);
+  }, [open, currentTransform, compositionWidth, compositionHeight, effectiveAspect, isPortrait, minScale]);
+
+  // When scale changes in landscape mode, clamp frame X so the 9:16 frame stays within the video
+  useEffect(() => {
+    if (open && !isPortrait) {
+      setFrameXPercent((prev) => {
+        const [minX, maxX] = landscapeFrameXBounds(scale);
+        return Math.max(minX, Math.min(maxX, prev));
+      });
+    }
+  }, [scale, open, isPortrait]);
 
   const handleZoomIn = useCallback(() => {
     setScale((s) => Math.min(MAX_SCALE, s + SCALE_STEP));
@@ -204,12 +249,18 @@ export function VideoCropDialog({
       if (panRange <= 0) return;
       const dx = (e.clientX - start.x) / panRange;
       const dy = (e.clientY - start.y) / rect.height;
-      const newX = Math.max(0, Math.min(1, start.frameX + dx));
-      const newY = Math.max(0, Math.min(1, start.frameY + dy));
+      let newX = start.frameX + dx;
+      let newY = Math.max(0, Math.min(1, start.frameY + dy));
+      if (!isPortrait) {
+        const [minX, maxX] = landscapeFrameXBounds(scale);
+        newX = Math.max(minX, Math.min(maxX, newX));
+      } else {
+        newX = Math.max(0, Math.min(1, newX));
+      }
       setFrameXPercent(newX);
       setFrameYPercent(newY);
     },
-    []
+    [isPortrait, scale]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -290,8 +341,8 @@ export function VideoCropDialog({
           <div
             ref={containerRef}
             className={cn(
-              "relative overflow-hidden rounded-lg border border-border bg-black max-h-[50vh]",
-              isPortrait ? "mx-auto" : "w-full",
+              "relative overflow-hidden rounded-lg border border-border bg-black",
+              isPortrait ? "mx-auto h-[50vh]" : "w-full",
               "cursor-default"
             )}
             style={{

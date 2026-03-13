@@ -61,8 +61,6 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
     [fps, zoom, videoDuration, onSeek]
   );
 
-  const playheadPosition = framesToPixels(currentFrame, fps, zoom);
-
   return (
     <div
       ref={rulerRef}
@@ -85,14 +83,6 @@ export const TimelineRuler: React.FC<TimelineRulerProps> = ({
           </span>
         </div>
       ))}
-
-      {/* Playhead indicator */}
-      <div
-        className="absolute top-0 bottom-0 w-0.5 bg-destructive pointer-events-none z-20"
-        style={{ left: playheadPosition }}
-      >
-        <div className="absolute -left-1.5 -top-1 w-3 h-3 rounded-full bg-destructive" />
-      </div>
     </div>
   );
 };

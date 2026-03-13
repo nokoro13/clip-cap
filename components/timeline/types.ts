@@ -1,11 +1,15 @@
 import type { Subtitle } from "../../remotion/Composition";
+import type { PlayerRef } from "@remotion/player";
 
 export interface TimelineProps {
   subtitles: Subtitle[];
   setSubtitles: React.Dispatch<React.SetStateAction<Subtitle[]>>;
   selectedSubtitle: string | null;
   setSelectedSubtitle: React.Dispatch<React.SetStateAction<string | null>>;
-  currentFrame: number;
+  /** When provided, timeline syncs playhead from the player (no parent re-renders). Otherwise use currentFrame prop. */
+  playerRef?: React.RefObject<PlayerRef | null>;
+  /** Fallback when playerRef is not provided */
+  currentFrame?: number;
   videoDuration: number;
   fps: number;
   videoUrl: string | null;

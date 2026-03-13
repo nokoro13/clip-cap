@@ -3,7 +3,7 @@
 import { Player, PlayerRef } from "@remotion/player";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useParams } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette, Crop } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, Crop, PanelLeftClose, PanelLeft } from "lucide-react";
 import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
@@ -637,9 +637,9 @@ export default function EditorPage() {
     400, 700,
   ]);
   const [leftPanelWidth, setLeftPanelWidth] = useState(420);
+  const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [resizingPanel, setResizingPanel] = useState(false);
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
-  const [currentFrame, setCurrentFrame] = useState(0);
   const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(null);
   const [subtitleMode, setSubtitleMode] =
     useState<SubtitleMode>("segment-highlight");
@@ -893,18 +893,6 @@ export default function EditorPage() {
       setSubtitles(splitSegments);
     }
   }, [maxWordsPerSegment, rawSegmentSubtitles, subtitleMode]);
-
-  useEffect(() => {
-    const player = playerRef.current;
-    if (!player) return;
-
-    const handleFrameUpdate = () => {
-      setCurrentFrame(player.getCurrentFrame());
-    };
-
-    player.addEventListener("frameupdate", handleFrameUpdate);
-    return () => player.removeEventListener("frameupdate", handleFrameUpdate);
-  }, []);
 
   const updateStyle = useCallback(
     <K extends keyof SubtitleStyle>(key: K, value: SubtitleStyle[K]) => {
@@ -1209,14 +1197,38 @@ export default function EditorPage() {
 
       {/* Main Content */}
       <div className="flex min-h-0 flex-1">
-        {/* Left Panel - Tabs: Styling & Subtitles (resizable) */}
+        {/* Left Panel - Tabs: Styling & Subtitles (resizable, collapsible) */}
         <aside
-          style={{ width: leftPanelWidth }}
+          style={{
+            width: leftPanelCollapsed ? 48 : leftPanelWidth,
+            transition: "width 0.2s ease-out",
+          }}
           className="relative flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-r border-border"
         >
+          {/* Collapse/expand toggle - always visible */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "absolute top-2 z-20 shrink-0",
+              leftPanelCollapsed ? "left-1 right-1" : "left-2"
+            )}
+            onClick={() => setLeftPanelCollapsed((c) => !c)}
+            title={leftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={leftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {leftPanelCollapsed ? (
+              <PanelLeft className="size-5" />
+            ) : (
+              <PanelLeftClose className="size-5" />
+            )}
+          </Button>
+
+          {!leftPanelCollapsed && (
+            <>
           <Tabs
             defaultValue="styling"
-            className="flex flex-1 flex-col overflow-hidden"
+            className="flex flex-1 flex-col overflow-hidden pt-10"
           >
             <TabsList variant="line" className="w-full shrink-0">
               <TabsTrigger value="styling" className="border-none">
@@ -2163,7 +2175,7 @@ export default function EditorPage() {
             </div>
           </Tabs>
 
-          {/* Resize handle - drag to change panel width */}
+          {/* Resize handle - drag to change panel width (only when expanded) */}
           <div
             role="separator"
             aria-label="Resize left panel"
@@ -2173,6 +2185,8 @@ export default function EditorPage() {
               resizingPanel && "border-primary/50 bg-primary/20"
             )}
           />
+            </>
+          )}
         </aside>
 
         {/* Center - Video Preview */}
@@ -2233,7 +2247,7 @@ export default function EditorPage() {
             setSubtitles={setSubtitles}
             selectedSubtitle={selectedSubtitle}
             setSelectedSubtitle={setSelectedSubtitle}
-            currentFrame={currentFrame}
+            playerRef={playerRef}
             videoDuration={videoDuration}
             fps={FPS}
             videoUrl={videoUrl}
