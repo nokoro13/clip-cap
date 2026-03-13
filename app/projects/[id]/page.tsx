@@ -126,17 +126,26 @@ function ClipVideoPreview({
     return () => video.removeEventListener('timeupdate', handleTimeUpdate);
   }, [startMs, endMs, onPlayToggle]);
 
-  // Set initial time on mount
+  // Seek to startMs when video loads or URL changes (for thumbnail display when paused)
   useEffect(() => {
     const video = videoRef.current;
-    if (video && videoUrl) {
+    if (!video || !videoUrl) return;
+
+    const seekToStart = () => {
       video.currentTime = startMs / 1000;
+    };
+
+    if (video.readyState >= 2) {
+      seekToStart();
+    } else {
+      video.addEventListener('loadeddata', seekToStart);
+      return () => video.removeEventListener('loadeddata', seekToStart);
     }
   }, [videoUrl, startMs]);
 
   return (
     <div className="relative size-full">
-      {videoUrl && isPlaying ? (
+      {videoUrl ? (
         <video
           ref={videoRef}
           src={videoUrl}
@@ -147,7 +156,7 @@ function ClipVideoPreview({
         />
       ) : (
         <div className="flex size-full items-center justify-center bg-muted">
-          <span className="text-xs text-muted-foreground">Original preview</span>
+          <span className="text-xs text-muted-foreground">No preview</span>
         </div>
       )}
 
@@ -155,7 +164,7 @@ function ClipVideoPreview({
       <button
         type="button"
         onClick={onPlayToggle}
-        className="absolute inset-0 flex items-center justify-center bg-black/0 transition-all hover:bg-black/30"
+        className="absolute inset-0 flex size-full items-center justify-center bg-black/0 transition-all hover:bg-black/30"
       >
         <div
           className={cn(
@@ -498,13 +507,21 @@ export default function ProjectGalleryPage() {
           <CardContent className="p-4">
             <div className="flex items-center gap-4">
               <div className="relative h-16 w-28 shrink-0 overflow-hidden rounded-lg bg-muted">
-                {project.thumbnailUrl && (
+                {project.thumbnailUrl ? (
                   <img
                     src={project.thumbnailUrl}
                     alt={project.title}
                     className="size-full object-cover"
                   />
-                )}
+                ) : videoUrl ? (
+                  <video
+                    src={videoUrl}
+                    className="size-full object-cover"
+                    muted
+                    playsInline
+                    preload="metadata"
+                  />
+                ) : null}
               </div>
               <div className="flex-1">
                 <p className="mb-1 text-sm font-medium">

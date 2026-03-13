@@ -3,7 +3,7 @@
 import { Player, PlayerRef } from "@remotion/player";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useParams } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette, Crop, PanelLeftClose, PanelLeft } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, Crop, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil } from "lucide-react";
 import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
@@ -1211,16 +1211,16 @@ export default function EditorPage() {
             size="icon"
             className={cn(
               "absolute top-2 z-20 shrink-0",
-              leftPanelCollapsed ? "left-1 right-1" : "left-2"
+              leftPanelCollapsed ? "left-1 right-1" : "left-1"
             )}
             onClick={() => setLeftPanelCollapsed((c) => !c)}
             title={leftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
             aria-label={leftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {leftPanelCollapsed ? (
-              <PanelLeft className="size-5" />
+              <PanelLeft className="size-6" />
             ) : (
-              <PanelLeftClose className="size-5" />
+              <PanelLeftClose className="size-6" />
             )}
           </Button>
 
@@ -1228,14 +1228,15 @@ export default function EditorPage() {
             <>
           <Tabs
             defaultValue="styling"
-            className="flex flex-1 flex-col overflow-hidden pt-10"
+            className="flex flex-1 flex-row overflow-hidden pt-10"
+				orientation="vertical"
           >
-            <TabsList variant="line" className="w-full shrink-0">
+            <TabsList variant="line" className="shrink-0 mt-4 gap-4">
               <TabsTrigger value="styling" className="border-none">
-                Styling
+                <Palette className="size-6" />
               </TabsTrigger>
               <TabsTrigger value="subtitles" className="border-none">
-                Subtitles
+                <Captions className="size-6" />
               </TabsTrigger>
             </TabsList>
             <div className="relative flex-1 flex min-h-0 flex-col">
@@ -1248,7 +1249,7 @@ export default function EditorPage() {
                   className="self-end"
                   onClick={() => setCustomizePanelOpen(true)}
                 >
-                  <Palette className="size-4" />
+                  <Pencil className="size-4" />
                   Customize{" "}
                   {activePreset
                     ? (PRESET_STYLES.find((p) => p.id === activePreset)?.name ??
@@ -1319,23 +1320,29 @@ export default function EditorPage() {
                           variant="line"
                           className="grid w-full grid-cols-4 h-9 mb-3"
                         >
-                          <TabsTrigger value="font" className="border-none">
-                            Font
+                          <TabsTrigger value="font" className="border-none" style={{ justifyContent: "center" }}>
+                            <Type className="size-6" />
                           </TabsTrigger>
                           <TabsTrigger
                             value="background"
                             className="border-none"
+                            style={{ justifyContent: "center" }}
                           >
-                            Background
+                            <Highlighter
+                              className="size-6"
+                            />
                           </TabsTrigger>
                           <TabsTrigger
                             value="alignment"
                             className="border-none"
+                            style={{ justifyContent: "center" }}
                           >
-                            Alignment
+                            <SquareCenterlineDashedVerticalIcon
+                              className="size-6"
+                            />
                           </TabsTrigger>
-                          <TabsTrigger value="effects" className="border-none">
-                            Effects
+                          <TabsTrigger value="effects" className="border-none" style={{ justifyContent: "center" }}>
+                            <WandSparkles className="size-6" />
                           </TabsTrigger>
                         </TabsList>
 
@@ -1873,97 +1880,6 @@ export default function EditorPage() {
                         </TabsContent>
 
                         <TabsContent value="effects" className="mt-0 space-y-4">
-                          {/* <div className="flex gap-4 mb-4">
-                            <div className="space-y-1 flex-1 flex flex-col">
-                              <span className="text-xs text-muted-foreground">
-                                Shadow Color
-                              </span>
-                              <ColorPickerInput
-                                value={style.shadowColor}
-                                onChange={(v) => updateStyle("shadowColor", v)}
-                                className="w-full"
-                              />
-                            </div>
-                            <div className="space-y-2 flex-1 flex flex-col">
-                              <div className="flex items-center justify-between">
-                                <span className="text-xs text-muted-foreground">
-                                  Shadow Blur
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {style.shadowBlur}px
-                                </span>
-                              </div>
-                              <div className="h-full content-center flex">
-                                <Slider
-                                  value={[style.shadowBlur]}
-                                  onValueChange={([v]) =>
-                                    updateStyle("shadowBlur", v)
-                                  }
-                                  min={0}
-                                  max={40}
-                                  step={2}
-                                />
-                              </div>
-                            </div>
-                          </div>
-
-                          <div className="mb-4 space-y-2">
-                            <div className="space-y-3">
-                              <div className="flex items-center justify-between text-[10px]">
-                                <span className="text-muted-foreground">
-                                  Opacity
-                                </span>
-                                <span className="text-muted-foreground">
-                                  {Math.round((style.shadowOpacity ?? 1) * 100)}
-                                  %
-                                </span>
-                              </div>
-                              <Slider
-                                value={[(style.shadowOpacity ?? 1) * 100]}
-                                onValueChange={([v]) =>
-                                  updateStyle("shadowOpacity", v / 100)
-                                }
-                                min={0}
-                                max={100}
-                                step={5}
-                              />
-                              <p className="text-[10px] text-muted-foreground/80">
-                                At 0% the shadow is off (same as no shadow).
-                              </p>
-                              <div className="grid grid-cols-2 gap-2">
-                                <div className="space-y-1">
-                                  <div className="flex justify-between text-[10px] text-muted-foreground">
-                                    <span>Offset X</span>
-                                    <span>{style.shadowOffsetX}px</span>
-                                  </div>
-                                  <Slider
-                                    value={[style.shadowOffsetX]}
-                                    onValueChange={([v]) =>
-                                      updateStyle("shadowOffsetX", v)
-                                    }
-                                    min={-20}
-                                    max={20}
-                                    step={1}
-                                  />
-                                </div>
-                                <div className="space-y-1">
-                                  <div className="flex justify-between text-[10px] text-muted-foreground">
-                                    <span>Offset Y</span>
-                                    <span>{style.shadowOffsetY}px</span>
-                                  </div>
-                                  <Slider
-                                    value={[style.shadowOffsetY]}
-                                    onValueChange={([v]) =>
-                                      updateStyle("shadowOffsetY", v)
-                                    }
-                                    min={-20}
-                                    max={20}
-                                    step={1}
-                                  />
-                                </div>
-                              </div>
-                            </div>
-                          </div> */}
 
                           <div className="mb-4 space-y-2">
                             <Label className="text-xs text-muted-foreground">

@@ -97,7 +97,7 @@ export function VideoUploadDialog({
 
         <div className="flex flex-col gap-4">
           {/* YouTube URL Input */}
-          <div className="relative">
+          {/* <div className="relative">
             <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
               <div className="flex size-6 items-center justify-center rounded bg-red-600">
                 <Play className="size-3 fill-white text-white" />
@@ -110,7 +110,7 @@ export function VideoUploadDialog({
               onKeyDown={(e) => e.key === 'Enter' && handleYoutubeSubmit()}
               className="h-11 pl-12"
             />
-          </div>
+          </div> */}
 
           {/* Google Drive Button */}
           <Button
