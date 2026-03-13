@@ -39,7 +39,20 @@ import {
   isGoogleFont,
 } from "@/lib/google-fonts-list";
 import type { Caption } from "@remotion/captions";
-import { Timeline } from "@/components/timeline/Timeline";
+import {
+  Timeline,
+  type VideoSegment,
+  type DeletedRange,
+  type EnhancedSubtitle,
+  DeletionDialog,
+  getStoredDeletePreference,
+} from "@/components/timeline";
+import {
+  createInitialVideoSegment,
+  applyDeletedRangesToSubtitles,
+  removeSubtitlesInRangeAndShift,
+  updateDeletedRangesAfterCut,
+} from "@/lib/timeline-state";
 import { VideoCropDialog } from "@/components/video-crop-dialog";
 
 const FPS = 30;
@@ -628,7 +641,7 @@ export default function EditorPage() {
   const [videoDuration, setVideoDuration] = useState(300); // Default 10 seconds at 30fps
   const [videoStartFrom, setVideoStartFrom] = useState(0); // Start offset in ms for clips
   const [isLoading, setIsLoading] = useState(true);
-  const [subtitles, setSubtitles] = useState<Subtitle[]>([]);
+  const [subtitles, setSubtitles] = useState<EnhancedSubtitle[]>([]);
   const [style, setStyle] = useState<SubtitleStyle>(DEFAULT_SUBTITLE_STYLE);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [customizePanelOpen, setCustomizePanelOpen] = useState(false);
@@ -641,6 +654,11 @@ export default function EditorPage() {
   const [resizingPanel, setResizingPanel] = useState(false);
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
   const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(null);
+  const [selectedVideoSegment, setSelectedVideoSegment] = useState<string | null>(null);
+  const [videoSegments, setVideoSegments] = useState<VideoSegment[]>([]);
+  const [deletedRanges, setDeletedRanges] = useState<DeletedRange[]>([]);
+  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
+  const [pendingDeleteSubtitleId, setPendingDeleteSubtitleId] = useState<string | null>(null);
   const [subtitleMode, setSubtitleMode] =
     useState<SubtitleMode>("segment-highlight");
   const [highlightColor, setHighlightColor] = useState("#facc15"); // Yellow default
@@ -675,9 +693,18 @@ export default function EditorPage() {
       const projectId = params.id as string;
       const storedProject = localStorage.getItem(`project-${projectId}`);
 
-      // Resolve video URL: prefer IndexedDB (fresh blob URL that survives refresh). Stale blob URLs
-      // in sessionStorage still exist after refresh but fail to play, so we try IndexedDB first.
+      // Resolve video URL: prefer IndexedDB (fresh blob URL that survives refresh). Blob URLs in
+      // sessionStorage/localStorage are invalid after refresh. For clips, video is stored under sourceProjectId.
       let initialVideoUrl: string | null = null;
+      let parsedProject: { sourceProjectId?: string; youtubeVideoId?: string } | null = null;
+      if (storedProject) {
+        try {
+          parsedProject = JSON.parse(storedProject);
+        } catch {
+          // ignore
+        }
+      }
+
       if (projectId) {
         const fromIdb = await getVideoBlobUrl(projectId);
         if (fromIdb) {
@@ -687,32 +714,41 @@ export default function EditorPage() {
           }
         }
       }
+      // For clips, video blob is stored under source project id, not clip id
+      if (!initialVideoUrl && parsedProject?.sourceProjectId) {
+        const fromSourceIdb = await getVideoBlobUrl(parsedProject.sourceProjectId);
+        if (fromSourceIdb) {
+          initialVideoUrl = fromSourceIdb;
+          if (typeof sessionStorage !== "undefined") {
+            sessionStorage.setItem(`video-${projectId}`, fromSourceIdb);
+          }
+        }
+      }
       if (!initialVideoUrl && typeof sessionStorage !== "undefined") {
-        initialVideoUrl = sessionStorage.getItem(`video-${projectId}`);
+        const fromSession = sessionStorage.getItem(`video-${projectId}`);
+        // Skip blob URLs - they're invalid after refresh
+        if (fromSession && !fromSession.startsWith("blob:")) {
+          initialVideoUrl = fromSession;
+        }
       }
       if (!initialVideoUrl && storedProject) {
         try {
           const p = JSON.parse(storedProject);
-          initialVideoUrl = p.videoUrl || p.blobUrl || null;
+          const storedUrl = p.videoUrl || p.blobUrl || null;
+          if (storedUrl && !storedUrl.startsWith("blob:")) {
+            initialVideoUrl = storedUrl;
+          }
         } catch {
           // ignore
         }
       }
       // For YouTube-sourced clips, use our stream proxy (raw yt-dlp URLs are blocked in browser by CORS).
-      // Use absolute URL so Remotion OffthreadVideo can load the video reliably.
-      if (storedProject) {
-        try {
-          const p = JSON.parse(storedProject);
-          if (p.youtubeVideoId) {
-            const origin =
-              typeof window !== "undefined" ? window.location.origin : "";
-            initialVideoUrl = `${origin}/api/youtube-stream/${p.youtubeVideoId}`;
-            if (typeof sessionStorage !== "undefined") {
-              sessionStorage.setItem(`video-${projectId}`, initialVideoUrl);
-            }
-          }
-        } catch {
-          // keep existing initialVideoUrl
+      if (storedProject && parsedProject?.youtubeVideoId) {
+        const origin =
+          typeof window !== "undefined" ? window.location.origin : "";
+        initialVideoUrl = `${origin}/api/youtube-stream/${parsedProject.youtubeVideoId}`;
+        if (typeof sessionStorage !== "undefined") {
+          sessionStorage.setItem(`video-${projectId}`, initialVideoUrl);
         }
       }
       if (initialVideoUrl) setVideoUrl(initialVideoUrl);
@@ -841,7 +877,55 @@ export default function EditorPage() {
     loadData();
   }, [params.id, searchParams]);
 
-  // Persist videoTransform and videoAspectRatio to project in localStorage
+  // Derived duration: when we have video segments, use their total; otherwise use videoDuration
+  const compositionDuration =
+    videoSegments.length > 0
+      ? Math.max(0, ...videoSegments.map((s) => s.endFrame))
+      : videoDuration;
+
+  // Initialize video segments when video loads
+  useEffect(() => {
+    if (videoUrl && videoDuration > 0) {
+      const projectId = params.id as string;
+      const stored = typeof localStorage !== "undefined" ? localStorage.getItem(`project-${projectId}`) : null;
+      if (stored) {
+        try {
+          const project = JSON.parse(stored);
+          if (project.videoSegments && Array.isArray(project.videoSegments) && project.videoSegments.length > 0) {
+            setVideoSegments(project.videoSegments);
+          } else {
+            // When editing a clip from a project, source video is the full video - use clipStartMs to trim to the correct portion
+            const sourceStartFrame =
+              project.clipStartMs != null
+                ? Math.round((project.clipStartMs / 1000) * FPS)
+                : 0;
+            setVideoSegments([
+              createInitialVideoSegment(videoUrl, videoDuration, sourceStartFrame),
+            ]);
+          }
+          if (project.deletedRanges && Array.isArray(project.deletedRanges)) {
+            setDeletedRanges(project.deletedRanges);
+          }
+        } catch {
+          const sourceStartFrame =
+            videoStartFrom > 0 ? Math.round((videoStartFrom / 1000) * FPS) : 0;
+          setVideoSegments([
+            createInitialVideoSegment(videoUrl, videoDuration, sourceStartFrame),
+          ]);
+        }
+      } else {
+        const sourceStartFrame =
+          videoStartFrom > 0 ? Math.round((videoStartFrom / 1000) * FPS) : 0;
+        setVideoSegments([
+          createInitialVideoSegment(videoUrl, videoDuration, sourceStartFrame),
+        ]);
+      }
+    } else {
+      setVideoSegments([]);
+    }
+  }, [videoUrl, videoDuration, videoStartFrom, params.id]);
+
+  // Persist videoTransform, videoAspectRatio, videoSegments, deletedRanges to project in localStorage
   useEffect(() => {
     const projectId = params.id as string;
     if (!projectId || typeof localStorage === "undefined") return;
@@ -851,12 +935,18 @@ export default function EditorPage() {
       const project = JSON.parse(stored);
       localStorage.setItem(
         `project-${projectId}`,
-        JSON.stringify({ ...project, videoTransform, videoAspectRatio })
+        JSON.stringify({
+          ...project,
+          videoTransform,
+          videoAspectRatio,
+          videoSegments,
+          deletedRanges,
+        })
       );
     } catch {
       // ignore
     }
-  }, [params.id, videoTransform, videoAspectRatio]);
+  }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges]);
 
   // Load video dimensions when videoUrl changes so 9:16 is detected for crop
   useEffect(() => {
@@ -972,21 +1062,41 @@ export default function EditorPage() {
   const applyPreset = useCallback(
     (preset: (typeof PRESET_STYLES)[0]) => {
       setStyle((prev) => ({ ...prev, ...preset.style }));
-      if (preset.subtitleMode !== undefined) {
-        setSubtitleMode(preset.subtitleMode);
-        if (preset.subtitleMode === "word") {
-          if (wordSubtitles.length > 0) setSubtitles(wordSubtitles);
-        } else {
-          if (segmentSubtitles.length > 0) setSubtitles(segmentSubtitles);
-        }
-      }
       if (preset.maxWordsPerSegment !== undefined)
         setMaxWordsPerSegment(preset.maxWordsPerSegment);
       if (preset.highlightColor !== undefined)
         setHighlightColor(preset.highlightColor);
       setActivePreset(preset.id);
+
+      if (preset.subtitleMode !== undefined) {
+        setSubtitleMode(preset.subtitleMode);
+        const maxWords = preset.maxWordsPerSegment ?? maxWordsPerSegment;
+        let newSubtitles: EnhancedSubtitle[];
+
+        if (preset.subtitleMode === "word") {
+          newSubtitles = wordSubtitles.length > 0 ? [...wordSubtitles] : [];
+        } else {
+          const segments = applyMaxWordsToSegments(
+            rawSegmentSubtitles,
+            maxWords,
+            FPS
+          );
+          newSubtitles = segments.length > 0 ? [...segments] : [];
+        }
+
+        const withDeletions = applyDeletedRangesToSubtitles(
+          newSubtitles,
+          deletedRanges
+        );
+        setSubtitles(withDeletions);
+      }
     },
-    [wordSubtitles, segmentSubtitles]
+    [
+      wordSubtitles,
+      rawSegmentSubtitles,
+      maxWordsPerSegment,
+      deletedRanges,
+    ]
   );
 
   const updateSubtitle = useCallback(
@@ -1129,31 +1239,186 @@ export default function EditorPage() {
 
   const handleSeek = useCallback(
     (frame: number) => {
-      playerRef.current?.seekTo(Math.max(0, Math.min(frame, videoDuration)));
+      playerRef.current?.seekTo(Math.max(0, Math.min(frame, compositionDuration)));
     },
-    [videoDuration]
+    [compositionDuration]
   );
 
-  // Keyboard shortcut for splitting
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      if (e.key === "s" || e.key === "S") {
-        const activeElement = document.activeElement;
-        // Don't trigger if user is typing in an input/textarea
-        if (
-          activeElement?.tagName === "INPUT" ||
-          activeElement?.tagName === "TEXTAREA"
-        ) {
+  const handleDeleteConfirm = useCallback(
+    (deleteVideo: boolean, subId?: string | null) => {
+      const id = subId ?? pendingDeleteSubtitleId;
+      setPendingDeleteSubtitleId(null);
+      if (!id) return;
+
+      const segment = subtitles.find((s) => s.id === id);
+      if (!segment) return;
+
+      if (!deleteVideo) {
+        // Subtitle only: remove from timeline entirely
+        setDeletedRanges((prev) => [
+          ...prev,
+          {
+            id: `deleted-${Date.now()}`,
+            startFrame: segment.startFrame,
+            endFrame: segment.endFrame,
+            affectsVideo: false,
+          },
+        ]);
+        setSubtitles((prev) => prev.filter((s) => s.id !== id));
+      } else {
+        // Subtitle + video: remove all subtitles in range, cut video, shift everything left
+        const cutStart = segment.startFrame;
+        const cutEnd = segment.endFrame;
+        const newRange: DeletedRange = {
+          id: `deleted-${Date.now()}`,
+          startFrame: cutStart,
+          endFrame: cutEnd,
+          affectsVideo: true,
+        };
+
+        setDeletedRanges((prev) =>
+          updateDeletedRangesAfterCut(prev, cutStart, cutEnd, newRange)
+        );
+        const shiftSubtitles = (prev: EnhancedSubtitle[]) =>
+          removeSubtitlesInRangeAndShift(prev, cutStart, cutEnd, FPS);
+        setSubtitles(shiftSubtitles);
+        setRawSegmentSubtitles((prev) => shiftSubtitles(prev));
+        setWordSubtitles((prev) => shiftSubtitles(prev));
+
+        if (videoSegments.length > 0) {
+          setVideoSegments((prev) => {
+            const seg = prev.find(
+              (v) =>
+                (segment.startFrame >= v.startFrame &&
+                  segment.startFrame < v.endFrame) ||
+                (segment.endFrame > v.startFrame &&
+                  segment.endFrame <= v.endFrame)
+            );
+            if (!seg) return prev;
+
+            const segStart = seg.startFrame;
+            const segEnd = seg.endFrame;
+            const vCutStart = Math.max(segStart, cutStart);
+            const vCutEnd = Math.min(segEnd, cutEnd);
+
+            if (vCutStart <= segStart && vCutEnd >= segEnd) {
+              const filtered = prev.filter((s) => s.id !== seg.id);
+              let pos = 0;
+              return filtered.map((s) => {
+                const dur = s.sourceEndFrame - s.sourceStartFrame;
+                const updated = {
+                  ...s,
+                  startFrame: pos,
+                  endFrame: pos + dur,
+                };
+                pos += dur;
+                return updated;
+              });
+            }
+
+            const newSegments: VideoSegment[] = [];
+            if (vCutStart > segStart) {
+              const srcCut = seg.sourceStartFrame + (vCutStart - segStart);
+              newSegments.push({
+                ...seg,
+                id: `${seg.id}-before-${Date.now()}`,
+                endFrame: vCutStart,
+                sourceEndFrame: srcCut,
+              });
+            }
+            if (vCutEnd < segEnd) {
+              const srcCut = seg.sourceStartFrame + (vCutEnd - segStart);
+              newSegments.push({
+                ...seg,
+                id: `${seg.id}-after-${Date.now()}`,
+                startFrame: vCutEnd,
+                sourceStartFrame: srcCut,
+              });
+            }
+
+            let result = prev.flatMap((s) =>
+              s.id === seg.id ? newSegments : [s]
+            );
+            let pos = 0;
+            result = result.map((s) => {
+              const dur = s.sourceEndFrame - s.sourceStartFrame;
+              const updated = { ...s, startFrame: pos, endFrame: pos + dur };
+              pos += dur;
+              return updated;
+            });
+            return result;
+          });
+        }
+      }
+      setSelectedSubtitle(null);
+    },
+    [
+      pendingDeleteSubtitleId,
+      subtitles,
+      videoSegments,
+      setSubtitles,
+      setRawSegmentSubtitles,
+      setWordSubtitles,
+      setVideoSegments,
+      setDeletedRanges,
+    ]
+  );
+
+  const handleDeleteRequest = useCallback(
+    (subtitleId: string | null, _videoSegmentId: string | null) => {
+      if (subtitleId) {
+        const pref = getStoredDeletePreference();
+        if (pref !== null) {
+          handleDeleteConfirm(pref, subtitleId);
           return;
         }
+        setPendingDeleteSubtitleId(subtitleId);
+        setShowDeleteDialog(true);
+      }
+    },
+    [handleDeleteConfirm]
+  );
+
+  // Keyboard shortcut for splitting (S) and delete (Delete/Backspace)
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const activeElement = document.activeElement;
+      const isTyping =
+        activeElement?.tagName === "INPUT" ||
+        activeElement?.tagName === "TEXTAREA";
+
+      if (e.key === "Delete" || e.key === "Backspace") {
+        if (isTyping) return;
         e.preventDefault();
-        // Trigger split - the Timeline component will handle it
+        if (selectedSubtitle) {
+          handleDeleteRequest(selectedSubtitle, null);
+        }
+        return;
+      }
+
+      if ((e.key === "k" || e.key === "K") && (e.ctrlKey || e.metaKey)) {
+        if (isTyping) return;
+        e.preventDefault();
+        const splitBtn = document.querySelector(
+          '[title="Split subtitle and video at playhead (S / Ctrl+K)"]'
+        );
+        (splitBtn as HTMLButtonElement)?.click();
+        return;
+      }
+
+      if (e.key === "s" || e.key === "S") {
+        if (isTyping) return;
+        e.preventDefault();
+        const splitBtn = document.querySelector(
+          '[title="Split subtitle and video at playhead (S / Ctrl+K)"]'
+        );
+        (splitBtn as HTMLButtonElement)?.click();
       }
     };
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
+  }, [selectedSubtitle, handleDeleteRequest]);
 
   if (isLoading) {
     return (
@@ -2117,6 +2382,7 @@ export default function EditorPage() {
               component={SubtitleComposition}
               inputProps={{
                 videoUrl,
+                videoSegments: videoSegments.length > 0 ? videoSegments : undefined,
                 subtitles,
                 style,
                 videoStartFrom,
@@ -2125,7 +2391,7 @@ export default function EditorPage() {
                 videoTransform,
                 videoAspectRatio,
               }}
-              durationInFrames={videoDuration}
+              durationInFrames={compositionDuration}
               fps={FPS}
               compositionWidth={1080}
               compositionHeight={1920}
@@ -2163,11 +2429,32 @@ export default function EditorPage() {
             setSubtitles={setSubtitles}
             selectedSubtitle={selectedSubtitle}
             setSelectedSubtitle={setSelectedSubtitle}
+            videoSegments={videoSegments}
+            setVideoSegments={setVideoSegments}
+            deletedRanges={deletedRanges}
+            setDeletedRanges={setDeletedRanges}
+            selectedVideoSegment={selectedVideoSegment}
+            setSelectedVideoSegment={setSelectedVideoSegment}
             playerRef={playerRef}
-            videoDuration={videoDuration}
+            videoDuration={compositionDuration}
             fps={FPS}
             videoUrl={videoUrl}
             onSeek={handleSeek}
+            onDeleteRequest={handleDeleteRequest}
+            setRawSegmentSubtitles={setRawSegmentSubtitles}
+            setWordSubtitles={setWordSubtitles}
+          />
+          <DeletionDialog
+            open={showDeleteDialog}
+            onOpenChange={setShowDeleteDialog}
+            type="subtitle"
+            onConfirm={(deleteVideo) => {
+              handleDeleteConfirm(deleteVideo, pendingDeleteSubtitleId);
+            }}
+            onCancel={() => {
+              setPendingDeleteSubtitleId(null);
+              setShowDeleteDialog(false);
+            }}
           />
         </main>
       </div>

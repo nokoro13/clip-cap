@@ -4,6 +4,7 @@ export { VideoTrack } from "./VideoTrack";
 export { SubtitleTrack } from "./SubtitleTrack";
 export { SubtitleSegment } from "./SubtitleSegment";
 export { ZoomControls } from "./ZoomControls";
+export { DeletionDialog, getStoredDeletePreference } from "./DeletionDialog";
 export * from "./types";
 export * from "./constants";
 export * from "./utils";

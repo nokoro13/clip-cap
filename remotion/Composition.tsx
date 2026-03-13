@@ -146,9 +146,24 @@ export type VideoTransform = {
   offsetY: number;
 };
 
+export type VideoSegment = {
+  id: string;
+  startFrame: number;
+  endFrame: number;
+  sourceStartFrame: number;
+  sourceEndFrame: number;
+  sourceVideoUrl: string;
+};
+
+export type EnhancedSubtitle = Subtitle & {
+  isDeleted?: boolean;
+};
+
 export type SubtitleCompositionProps = {
   videoUrl: string | null;
-  subtitles: Subtitle[];
+  /** When provided, renders multiple video segments instead of single video */
+  videoSegments?: VideoSegment[];
+  subtitles: (Subtitle | EnhancedSubtitle)[];
   style: SubtitleStyle;
   videoStartFrom?: number;
   subtitleMode?: SubtitleMode; // How to display subtitles
@@ -657,6 +672,7 @@ const GoogleFontLoader: React.FC<{
 
 export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
   videoUrl,
+  videoSegments = [],
   subtitles,
   style,
   videoStartFrom = 0,
@@ -688,7 +704,7 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
       ? COMPOSITION_HEIGHT
       : COMPOSITION_WIDTH / videoAspectRatio;
 
-  const videoWrapperStyle = hasCustomTransform
+  const videoWrapperStyle = hasCustomTransform && videoTransform
     ? {
         position: 'absolute' as const,
         left: '50%',
@@ -704,10 +720,49 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
       ? { width: '100%', height: '100%', objectFit: 'cover' }
       : { width: '100%', height: '100%', objectFit: 'contain' };
 
+  const visibleSubtitles = subtitles.filter(
+    (s): s is Subtitle => !('isDeleted' in s) || !(s as EnhancedSubtitle).isDeleted
+  );
+
+  const useVideoSegments = videoSegments.length > 0;
+
   return (
     <GoogleFontLoader style={style}>
       <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
-        {videoUrl && (
+        {useVideoSegments ? (
+          videoSegments.map((segment) => {
+            const durationFrames = segment.endFrame - segment.startFrame;
+            const VideoContent = hasCustomTransform && videoWrapperStyle ? (
+              <div style={videoWrapperStyle}>
+                <OffthreadVideo
+                  src={segment.sourceVideoUrl}
+                  trimBefore={segment.sourceStartFrame}
+                  trimAfter={segment.sourceEndFrame}
+                  style={videoStyle}
+                  pauseWhenBuffering
+                />
+              </div>
+            ) : (
+              <OffthreadVideo
+                src={segment.sourceVideoUrl}
+                trimBefore={segment.sourceStartFrame}
+                trimAfter={segment.sourceEndFrame}
+                style={videoStyle}
+                pauseWhenBuffering
+              />
+            );
+            return (
+              <Sequence
+                key={segment.id}
+                from={segment.startFrame}
+                durationInFrames={durationFrames}
+                premountFor={Math.min(2 * fps, durationFrames)}
+              >
+                {VideoContent}
+              </Sequence>
+            );
+          })
+        ) : videoUrl ? (
           hasCustomTransform && videoWrapperStyle ? (
             <div style={videoWrapperStyle}>
               <OffthreadVideo
@@ -723,9 +778,9 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
               style={videoStyle}
             />
           )
-        )}
+        ) : null}
 
-        {!videoUrl && (
+        {!videoUrl && !useVideoSegments && (
           <AbsoluteFill
             style={{
               backgroundColor: '#1a1a2e',
@@ -739,7 +794,7 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
           </AbsoluteFill>
         )}
 
-        {subtitles
+        {visibleSubtitles
           .filter((subtitle) => subtitle.endFrame > subtitle.startFrame)
           .map((subtitle) => (
             <Sequence

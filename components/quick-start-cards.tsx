@@ -1,22 +1,42 @@
 'use client';
 
-import { useState } from 'react';
 import { useRouter, useParams } from 'next/navigation';
-import { Captions, Layers, Loader2 } from 'lucide-react';
+import { Captions, Layers } from 'lucide-react';
 import { SimpleUploadDialog } from '@/components/simple-upload-dialog';
 import { VideoUploadDialog } from '@/components/video-upload-dialog';
 import { cn } from '@/lib/utils';
-import { addProjectToIndex } from '@/lib/project-index';
-import { saveVideoBlob } from '@/lib/video-storage';
 import {
-  Dialog,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+  addProjectToIndex,
+  updateProjectInIndex,
+  notifyProjectIndexUpdate,
+} from '@/lib/project-index';
+import { saveVideoBlob } from '@/lib/video-storage';
 
 interface QuickStartCardsProps {
   className?: string;
+}
+
+const ESTIMATED_PROCESSING_SECONDS = 60;
+
+function createProgressUpdater(experienceId: string, projectId: string) {
+  let intervalId: ReturnType<typeof setInterval> | null = null;
+  const startTime = Date.now();
+
+  const stop = () => {
+    if (intervalId) {
+      clearInterval(intervalId);
+      intervalId = null;
+    }
+  };
+
+  intervalId = setInterval(() => {
+    const elapsed = (Date.now() - startTime) / 1000;
+    const progress = Math.min(90, Math.round((elapsed / ESTIMATED_PROCESSING_SECONDS) * 90));
+    updateProjectInIndex(experienceId, projectId, { progress });
+    notifyProjectIndexUpdate();
+  }, 500);
+
+  return { stop };
 }
 
 export function QuickStartCards({ className }: QuickStartCardsProps) {
@@ -24,19 +44,24 @@ export function QuickStartCards({ className }: QuickStartCardsProps) {
   const params = useParams();
   const experienceId = params.experienceId as string;
 
-  const [isProcessing, setIsProcessing] = useState(false);
-  const [processingMessage, setProcessingMessage] = useState('');
-
   const handleSingleVideoSelect = async (file: File) => {
-    setIsProcessing(true);
-    setProcessingMessage('Transcribing video with AI...');
+    const projectId = `editor-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    addProjectToIndex(experienceId, {
+      id: projectId,
+      title: file.name,
+      type: 'editor',
+      status: 'processing',
+      progress: 0,
+    });
+    notifyProjectIndexUpdate();
+
+    const progressUpdater = createProgressUpdater(experienceId, projectId);
 
     try {
-      // Create form data for transcription
       const formData = new FormData();
       formData.append('file', file);
 
-      // Call transcribe API
       const response = await fetch('/api/transcribe', {
         method: 'POST',
         body: formData,
@@ -48,54 +73,58 @@ export function QuickStartCards({ className }: QuickStartCardsProps) {
       }
 
       const { captions, segmentCaptions, duration } = await response.json();
+      progressUpdater.stop();
 
-      // Create a blob URL for the video
       const blobUrl = URL.createObjectURL(file);
-
-      // Generate project ID
-      const projectId = `editor-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-      // Store project data in localStorage (for captions)
       const projectData = {
-        captions, // Word-level captions
-        segmentCaptions, // Segment captions with word timings for highlighting
+        captions,
+        segmentCaptions,
         duration,
         title: file.name,
-        experienceId, // Store the experience ID for navigation back
+        experienceId,
       };
       localStorage.setItem(`project-${projectId}`, JSON.stringify(projectData));
-
-      // Store the blob URL in sessionStorage (survives client-side navigation)
       sessionStorage.setItem(`video-${projectId}`, blobUrl);
-      // Persist video in IndexedDB so it survives page refresh
       await saveVideoBlob(projectId, file);
 
-      addProjectToIndex(experienceId, {
-        id: projectId,
-        title: file.name,
-        type: 'editor',
+      updateProjectInIndex(experienceId, projectId, {
+        status: 'completed',
+        progress: 100,
         duration,
       });
+      notifyProjectIndexUpdate();
 
-      // Navigate to editor
       router.push(`/editor/${projectId}`);
     } catch (error) {
+      progressUpdater.stop();
       console.error('Error processing video:', error);
+      updateProjectInIndex(experienceId, projectId, {
+        status: 'error',
+        progress: 0,
+      });
+      notifyProjectIndexUpdate();
       alert(error instanceof Error ? error.message : 'Failed to process video');
-      setIsProcessing(false);
     }
   };
 
   const handleBulkVideoSelect = async (file: File) => {
-    setIsProcessing(true);
-    setProcessingMessage('Analyzing video for viral moments...');
+    const projectId = `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+    addProjectToIndex(experienceId, {
+      id: projectId,
+      title: file.name,
+      type: 'project',
+      status: 'processing',
+      progress: 0,
+    });
+    notifyProjectIndexUpdate();
+
+    const progressUpdater = createProgressUpdater(experienceId, projectId);
 
     try {
-      // Create form data for viral analysis
       const formData = new FormData();
       formData.append('file', file);
 
-      // Call analyze-viral API
       const response = await fetch('/api/analyze-viral', {
         method: 'POST',
         body: formData,
@@ -107,22 +136,17 @@ export function QuickStartCards({ className }: QuickStartCardsProps) {
       }
 
       const { captions, segmentCaptions, clips, duration, fullTranscript } = await response.json();
+      progressUpdater.stop();
 
-      // Create a blob URL for the video
       const blobUrl = URL.createObjectURL(file);
-
-      // Generate project ID
-      const projectId = `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
-
-      // Store project data (without videoUrl since blob URLs don't persist)
       const projectData = {
         id: projectId,
         title: file.name,
-        videoUrl: '', // Will be loaded from sessionStorage
+        videoUrl: '',
         thumbnailUrl: '',
         duration: duration,
-        captions, // Word-level captions
-        segmentCaptions, // Segment captions with word timings
+        captions,
+        segmentCaptions,
         clips: clips.map((clip: { id: string; title: string; startMs: number; endMs: number; viralityScore: number; reason?: string; transcript: string }) => ({
           ...clip,
           status: 'all',
@@ -130,44 +154,99 @@ export function QuickStartCards({ className }: QuickStartCardsProps) {
         fullTranscript,
         status: 'completed',
         createdAt: Date.now(),
-        experienceId, // Store the experience ID for navigation back
+        experienceId,
       };
 
       localStorage.setItem(`project-${projectId}`, JSON.stringify(projectData));
-
-      // Store the blob URL in sessionStorage (persists across client-side navigation)
       sessionStorage.setItem(`video-${projectId}`, blobUrl);
-      // Persist video in IndexedDB so it survives page refresh
       await saveVideoBlob(projectId, file);
 
-      addProjectToIndex(experienceId, {
-        id: projectId,
-        title: file.name,
-        type: 'project',
+      updateProjectInIndex(experienceId, projectId, {
+        status: 'completed',
+        progress: 100,
         duration: typeof duration === 'number' ? duration : 0,
         clipsCount: clips?.length ?? 0,
       });
+      notifyProjectIndexUpdate();
 
-      // Navigate to gallery
       router.push(`/projects/${projectId}`);
     } catch (error) {
+      progressUpdater.stop();
       console.error('Error analyzing video:', error);
+      updateProjectInIndex(experienceId, projectId, { status: 'error', progress: 0 });
+      notifyProjectIndexUpdate();
       alert(error instanceof Error ? error.message : 'Failed to analyze video');
-      setIsProcessing(false);
     }
   };
 
-  const handleYoutubeUrl = (url: string) => {
-    setIsProcessing(true);
-    setProcessingMessage('Processing YouTube video...');
-
-    // Generate project ID
+  const handleYoutubeUrl = async (url: string) => {
     const projectId = `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
-    // Navigate to projects page with YouTube URL - processing will happen there
-    router.push(
-      `/projects/${projectId}?youtubeUrl=${encodeURIComponent(url)}&experienceId=${encodeURIComponent(experienceId)}`
-    );
+    addProjectToIndex(experienceId, {
+      id: projectId,
+      title: 'YouTube video',
+      type: 'project',
+      status: 'processing',
+      progress: 0,
+    });
+    notifyProjectIndexUpdate();
+
+    const progressUpdater = createProgressUpdater(experienceId, projectId);
+
+    try {
+      const response = await fetch('/api/process-video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          youtubeUrl: url,
+          projectId,
+        }),
+      });
+
+      if (!response.ok) {
+        const data = await response.json();
+        throw new Error(data.error || 'Failed to process video');
+      }
+
+      const data = await response.json();
+      progressUpdater.stop();
+
+      const projectData = data.project;
+      const projectToStore = {
+        ...projectData,
+        experienceId,
+        clips: (projectData.clips || []).map((c: { status?: string }) => ({
+          ...c,
+          status: c.status || 'all',
+        })),
+      };
+      localStorage.setItem(`project-${projectId}`, JSON.stringify(projectToStore));
+
+      if (projectData.youtubeVideoId) {
+        const origin = typeof window !== 'undefined' ? window.location.origin : '';
+        const proxyUrl = `${origin}/api/youtube-stream/${projectData.youtubeVideoId}`;
+        sessionStorage.setItem(`video-${projectId}`, proxyUrl);
+      } else if (projectData.videoUrl) {
+        sessionStorage.setItem(`video-${projectId}`, projectData.videoUrl);
+      }
+
+      updateProjectInIndex(experienceId, projectId, {
+        status: 'completed',
+        progress: 100,
+        title: projectData.title,
+        duration: projectData.duration,
+        clipsCount: projectData.clips?.length ?? 0,
+      });
+      notifyProjectIndexUpdate();
+
+      router.push(`/projects/${projectId}`);
+    } catch (error) {
+      progressUpdater.stop();
+      console.error('Error processing YouTube video:', error);
+      updateProjectInIndex(experienceId, projectId, { status: 'error', progress: 0 });
+      notifyProjectIndexUpdate();
+      alert(error instanceof Error ? error.message : 'Failed to process video');
+    }
   };
 
   const handleGoogleDriveImport = () => {
@@ -242,19 +321,6 @@ export function QuickStartCards({ className }: QuickStartCardsProps) {
           />
         </div>
       </div>
-
-      {/* Processing Modal */}
-      <Dialog open={isProcessing} onOpenChange={() => {}}>
-        <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()}>
-          <DialogHeader className="text-center sm:text-center">
-            <DialogTitle className="flex flex-col items-center gap-4">
-              <Loader2 className="size-10 animate-spin text-primary" />
-              <span>Processing Your Video</span>
-            </DialogTitle>
-          </DialogHeader>
-          <p className="text-center text-muted-foreground">{processingMessage}</p>
-        </DialogContent>
-      </Dialog>
     </>
   );
 }

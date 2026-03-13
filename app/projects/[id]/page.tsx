@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { getVideoBlobUrl } from '@/lib/video-storage';
-import { addProjectToIndex } from '@/lib/project-index';
+import { addProjectToIndex, notifyProjectIndexUpdate } from '@/lib/project-index';
 import type { Caption } from '@remotion/captions';
 
 type ClipStatus = 'all' | 'approved' | 'rejected' | 'exported' | 'archived';
@@ -308,7 +308,10 @@ export default function ProjectGalleryPage() {
               type: 'project',
               duration: projectData.duration,
               clipsCount: projectData.clips?.length ?? 0,
+              status: 'completed',
+              progress: 100,
             });
+            notifyProjectIndexUpdate();
           }
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Failed to process video');

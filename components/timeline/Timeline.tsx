@@ -3,12 +3,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ChevronUp, ChevronDown, Scissors } from "lucide-react";
+import { ChevronUp, ChevronDown, Trash2, ScissorsLineDashed } from "lucide-react";
 import { TimelineRuler } from "./TimelineRuler";
 import { VideoTrack } from "./VideoTrack";
 import { SubtitleTrack } from "./SubtitleTrack";
 import { ZoomControls } from "./ZoomControls";
-import type { TimelineProps, DragState } from "./types";
+import type { TimelineProps, DragState, VideoSegment } from "./types";
 import {
   COLLAPSED_HEIGHT,
   EXPANDED_HEIGHT,
@@ -25,18 +25,31 @@ import {
   clamp,
   calculateZoomToFit,
 } from "./utils";
+import {
+  removeSubtitlesInRangeAndShift,
+  updateDeletedRangesAfterCut,
+} from "@/lib/timeline-state";
 
 export const Timeline: React.FC<TimelineProps> = ({
   subtitles,
   setSubtitles,
   selectedSubtitle,
   setSelectedSubtitle,
+  videoSegments = [],
+  setVideoSegments,
+  deletedRanges = [],
+  setDeletedRanges,
+  selectedVideoSegment,
+  setSelectedVideoSegment,
   playerRef,
   currentFrame: currentFrameProp = 0,
   videoDuration,
   fps,
   videoUrl,
   onSeek,
+  onDeleteRequest,
+  setRawSegmentSubtitles,
+  setWordSubtitles,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -105,24 +118,41 @@ export const Timeline: React.FC<TimelineProps> = ({
 
   const handleDragStart = useCallback(
     (e: React.MouseEvent, id: string, type: "move" | "trim-start" | "trim-end") => {
-      const subtitle = subtitles.find((s) => s.id === id);
-      if (!subtitle || !tracksRef.current) return;
+      if (!tracksRef.current) return;
 
       const rect = tracksRef.current.getBoundingClientRect();
       const startX = e.clientX - rect.left + tracksRef.current.scrollLeft;
 
-      setDragState({
-        id,
-        type,
-        startX,
-        startFrame: subtitle.startFrame,
-        endFrame: subtitle.endFrame,
-      });
+      const subtitle = subtitles.find((s) => s.id === id);
+      const videoSegment = videoSegments.find((s) => s.id === id);
+
+      if (subtitle) {
+        setDragState({
+          id,
+          type,
+          startX,
+          startFrame: subtitle.startFrame,
+          endFrame: subtitle.endFrame,
+        });
+      } else if (videoSegment && setVideoSegments) {
+        setDragState({
+          id,
+          type,
+          startX,
+          startFrame: videoSegment.startFrame,
+          endFrame: videoSegment.endFrame,
+          sourceStartFrame: videoSegment.sourceStartFrame,
+          sourceEndFrame: videoSegment.sourceEndFrame,
+          isVideoSegment: true,
+        });
+      } else {
+        return;
+      }
 
       document.body.style.cursor =
         type === "move" ? "grabbing" : "ew-resize";
     },
-    [subtitles]
+    [subtitles, videoSegments, setVideoSegments]
   );
 
   useEffect(() => {
@@ -136,48 +166,87 @@ export const Timeline: React.FC<TimelineProps> = ({
       const deltaPixels = currentX - dragState.startX;
       const deltaFrames = pixelsToFrames(deltaPixels, fps, zoom);
 
-      setSubtitles((prev) =>
-        prev.map((sub) => {
-          if (sub.id !== dragState.id) return sub;
+      if (dragState.isVideoSegment && setVideoSegments) {
+        setVideoSegments((prev) =>
+          prev.map((seg) => {
+            if (seg.id !== dragState.id) return seg;
 
-          const duration = dragState.endFrame - dragState.startFrame;
+            const srcStart = dragState.sourceStartFrame ?? seg.sourceStartFrame;
+            const srcEnd = dragState.sourceEndFrame ?? seg.sourceEndFrame;
+            const srcDuration = srcEnd - srcStart;
 
-          if (dragState.type === "move") {
-            const newStart = clamp(
-              dragState.startFrame + deltaFrames,
-              0,
-              videoDuration - duration
-            );
-            return {
-              ...sub,
-              startFrame: Math.round(newStart),
-              endFrame: Math.round(newStart + duration),
-            };
-          } else if (dragState.type === "trim-start") {
-            const newStart = clamp(
-              dragState.startFrame + deltaFrames,
-              0,
-              dragState.endFrame - MIN_SEGMENT_FRAMES
-            );
-            return {
-              ...sub,
-              startFrame: Math.round(newStart),
-            };
-          } else if (dragState.type === "trim-end") {
-            const newEnd = clamp(
-              dragState.endFrame + deltaFrames,
-              dragState.startFrame + MIN_SEGMENT_FRAMES,
-              videoDuration
-            );
-            return {
-              ...sub,
-              endFrame: Math.round(newEnd),
-            };
-          }
+            if (dragState.type === "trim-start") {
+              const newStart = clamp(
+                dragState.startFrame + deltaFrames,
+                0,
+                dragState.endFrame - MIN_SEGMENT_FRAMES
+              );
+              const trimAmount = newStart - dragState.startFrame;
+              return {
+                ...seg,
+                startFrame: Math.round(newStart),
+                sourceStartFrame: Math.round(srcStart + trimAmount),
+              };
+            } else if (dragState.type === "trim-end") {
+              const newEnd = clamp(
+                dragState.endFrame + deltaFrames,
+                dragState.startFrame + MIN_SEGMENT_FRAMES,
+                videoDuration
+              );
+              const trimAmount = newEnd - dragState.endFrame;
+              return {
+                ...seg,
+                endFrame: Math.round(newEnd),
+                sourceEndFrame: Math.round(srcEnd + trimAmount),
+              };
+            }
+            return seg;
+          })
+        );
+      } else {
+        setSubtitles((prev) =>
+          prev.map((sub) => {
+            if (sub.id !== dragState.id) return sub;
 
-          return sub;
-        })
-      );
+            const duration = dragState.endFrame - dragState.startFrame;
+
+            if (dragState.type === "move") {
+              const newStart = clamp(
+                dragState.startFrame + deltaFrames,
+                0,
+                videoDuration - duration
+              );
+              return {
+                ...sub,
+                startFrame: Math.round(newStart),
+                endFrame: Math.round(newStart + duration),
+              };
+            } else if (dragState.type === "trim-start") {
+              const newStart = clamp(
+                dragState.startFrame + deltaFrames,
+                0,
+                dragState.endFrame - MIN_SEGMENT_FRAMES
+              );
+              return {
+                ...sub,
+                startFrame: Math.round(newStart),
+              };
+            } else if (dragState.type === "trim-end") {
+              const newEnd = clamp(
+                dragState.endFrame + deltaFrames,
+                dragState.startFrame + MIN_SEGMENT_FRAMES,
+                videoDuration
+              );
+              return {
+                ...sub,
+                endFrame: Math.round(newEnd),
+              };
+            }
+
+            return sub;
+          })
+        );
+      }
     };
 
     const handleMouseUp = () => {
@@ -192,7 +261,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [dragState, fps, zoom, videoDuration, setSubtitles]);
+  }, [dragState, fps, zoom, videoDuration, setSubtitles, setVideoSegments]);
 
   const handleSplit = useCallback(() => {
     // Find subtitle at current frame
@@ -251,6 +320,107 @@ export const Timeline: React.FC<TimelineProps> = ({
     setSelectedSubtitle(null);
   }, [subtitles, currentFrame, fps, setSubtitles, setSelectedSubtitle]);
 
+  const handleSplitVideo = useCallback(() => {
+    if (!setVideoSegments || videoSegments.length === 0) return;
+
+    const segment = videoSegments.find(
+      (s) => currentFrame >= s.startFrame && currentFrame < s.endFrame
+    );
+    if (!segment) return;
+
+    const segmentDuration = segment.endFrame - segment.startFrame;
+    if (segmentDuration < MIN_SEGMENT_FRAMES * 2) return;
+
+    const sourceFrame =
+      segment.sourceStartFrame +
+      (currentFrame - segment.startFrame);
+
+    const firstPart: VideoSegment = {
+      ...segment,
+      id: `${segment.id}-split-1-${Date.now()}`,
+      endFrame: currentFrame,
+      sourceEndFrame: sourceFrame,
+    };
+
+    const secondPart: VideoSegment = {
+      ...segment,
+      id: `${segment.id}-split-2-${Date.now()}`,
+      startFrame: currentFrame,
+      sourceStartFrame: sourceFrame,
+    };
+
+    setVideoSegments((prev) =>
+      prev.flatMap((s) => (s.id === segment.id ? [firstPart, secondPart] : [s]))
+    );
+    setSelectedVideoSegment?.(null);
+  }, [
+    videoSegments,
+    currentFrame,
+    setVideoSegments,
+    setSelectedVideoSegment,
+  ]);
+
+  const handleDeleteClick = useCallback(() => {
+    if (selectedSubtitle && onDeleteRequest) {
+      onDeleteRequest(selectedSubtitle, null);
+    } else if (selectedVideoSegment && setVideoSegments) {
+      const seg = videoSegments.find((s) => s.id === selectedVideoSegment);
+      if (!seg) return;
+
+      const cutStart = seg.startFrame;
+      const cutEnd = seg.endFrame;
+      const newRange = {
+        id: `deleted-${Date.now()}`,
+        startFrame: cutStart,
+        endFrame: cutEnd,
+        affectsVideo: true,
+      };
+
+      // Remove subtitles in deleted range and shift remaining left (including word-level cleanup)
+      const shiftSubtitles = (prev: typeof subtitles) =>
+        removeSubtitlesInRangeAndShift(prev, cutStart, cutEnd, fps);
+      setSubtitles(shiftSubtitles);
+      setRawSegmentSubtitles?.((prev) => shiftSubtitles(prev));
+      setWordSubtitles?.((prev) => shiftSubtitles(prev));
+
+      // Update deleted ranges (add new, shift/remove overlapping)
+      if (setDeletedRanges) {
+        setDeletedRanges((prev) =>
+          updateDeletedRangesAfterCut(prev, cutStart, cutEnd, newRange)
+        );
+      }
+
+      // Remove video segment and snap remaining segments left
+      setVideoSegments((prev) => {
+        const filtered = prev.filter((s) => s.id !== selectedVideoSegment);
+        let currentPos = 0;
+        return filtered.map((s) => {
+          const duration = s.sourceEndFrame - s.sourceStartFrame;
+          const updated = {
+            ...s,
+            startFrame: currentPos,
+            endFrame: currentPos + duration,
+          };
+          currentPos += duration;
+          return updated;
+        });
+      });
+      setSelectedVideoSegment?.(null);
+    }
+  }, [
+    selectedSubtitle,
+    selectedVideoSegment,
+    videoSegments,
+    onDeleteRequest,
+    setSubtitles,
+    setRawSegmentSubtitles,
+    setWordSubtitles,
+    setVideoSegments,
+    setDeletedRanges,
+    setSelectedVideoSegment,
+    fps,
+  ]);
+
   const height = isExpanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT;
 
   return (
@@ -279,22 +449,41 @@ export const Timeline: React.FC<TimelineProps> = ({
             )}
           </Button>
 
-          <span className="text-sm font-medium">Timeline</span>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => {
+              handleSplit();
+              handleSplitVideo();
+            }}
+            disabled={
+              !subtitles.some(
+                (s) => currentFrame >= s.startFrame && currentFrame < s.endFrame
+              ) &&
+              !(
+                videoSegments.length > 0 &&
+                videoSegments.some(
+                  (s) =>
+                    currentFrame >= s.startFrame && currentFrame < s.endFrame
+                )
+              )
+            }
+            title="Split subtitle and video at playhead (S / Ctrl+K)"
+          >
+            <ScissorsLineDashed size="6" />
+          </Button>
 
           <Button
             variant="ghost"
             size="sm"
-            className="h-7 ml-2"
-            onClick={handleSplit}
+            onClick={handleDeleteClick}
             disabled={
-              !subtitles.some(
-                (s) => currentFrame >= s.startFrame && currentFrame < s.endFrame
-              )
+              !selectedSubtitle &&
+              !selectedVideoSegment
             }
-            title="Split subtitle at playhead (S)"
+            title="Delete selected (Delete key)"
           >
-            <Scissors className="h-3 w-3 mr-1" />
-            Split
+            <Trash2 size="6" />
           </Button>
         </div>
 
@@ -354,7 +543,15 @@ export const Timeline: React.FC<TimelineProps> = ({
               currentFrame={currentFrame}
               onSeek={onSeek}
             />
-            <VideoTrack videoDuration={videoDuration} fps={fps} zoom={zoom} />
+            <VideoTrack
+              videoSegments={videoSegments}
+              selectedSegment={selectedVideoSegment ?? null}
+              onSelectSegment={(id) => setSelectedVideoSegment?.(id)}
+              videoDuration={videoDuration}
+              fps={fps}
+              zoom={zoom}
+              onDragStart={handleDragStart}
+            />
             <SubtitleTrack
               subtitles={subtitles}
               selectedSubtitle={selectedSubtitle}

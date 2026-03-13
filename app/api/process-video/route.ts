@@ -68,6 +68,7 @@ export async function POST(request: NextRequest) {
             duration: video.duration,
             channelName: video.channelName,
             captions: analysis.captions,
+            segmentCaptions: analysis.segmentCaptions,
             clips: analysis.clips,
             fullTranscript: analysis.fullTranscript,
             status: 'completed',

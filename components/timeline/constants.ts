@@ -1,6 +1,6 @@
 // Timeline dimensions
 export const COLLAPSED_HEIGHT = 40;
-export const EXPANDED_HEIGHT = 300;
+export const EXPANDED_HEIGHT = 'max-content';
 export const TRACK_HEIGHT = 48;
 export const RULER_HEIGHT = 32;
 export const HEADER_HEIGHT = 40;
@@ -22,6 +22,16 @@ export const SUBTITLE_COLORS = [
   "#f97316",
   "#22c55e",
   "#06b6d4",
+];
+
+// Colors for video segments
+export const VIDEO_SEGMENT_COLORS = [
+  "#1e40af",
+  "#7c3aed",
+  "#be185d",
+  "#ea580c",
+  "#15803d",
+  "#0e7490",
 ];
 
 // Interaction

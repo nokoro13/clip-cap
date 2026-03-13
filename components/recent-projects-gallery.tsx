@@ -2,10 +2,15 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Captions, Layers, ExternalLink } from 'lucide-react';
-import { getProjectIndex, type ProjectIndexEntry } from '@/lib/project-index';
+import { Captions, Layers, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
+import {
+  getProjectIndex,
+  type ProjectIndexEntry,
+  PROJECT_INDEX_UPDATE_EVENT,
+} from '@/lib/project-index';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
 
 const PROJECT_INDEX_KEY_PREFIX = 'clipcap-projects-';
@@ -52,8 +57,13 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
     const onStorage = (e: StorageEvent) => {
       if (e.key === key) refresh();
     };
+    const onIndexUpdate = () => refresh();
     window.addEventListener('storage', onStorage);
-    return () => window.removeEventListener('storage', onStorage);
+    window.addEventListener(PROJECT_INDEX_UPDATE_EVENT, onIndexUpdate);
+    return () => {
+      window.removeEventListener('storage', onStorage);
+      window.removeEventListener(PROJECT_INDEX_UPDATE_EVENT, onIndexUpdate);
+    };
   }, [mounted, experienceId, refresh]);
 
   if (!mounted) {
@@ -82,42 +92,83 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
             const href = entry.type === 'editor' ? `/editor/${entry.id}` : `/projects/${entry.id}`;
             const label = entry.type === 'editor' ? 'Subtitles' : 'Bulk';
             const Icon = entry.type === 'editor' ? Captions : Layers;
+            const isProcessing = entry.status === 'processing';
+            const isError = entry.status === 'error';
 
             return (
               <Card
                 key={entry.id}
-                className="min-w-[200px] max-w-[240px] shrink-0 overflow-hidden transition-shadow hover:shadow-md"
+                className={cn(
+                  'min-w-[200px] max-w-[240px] shrink-0 overflow-hidden transition-shadow hover:shadow-md',
+                  isProcessing && 'border-primary/30',
+                  isError && 'border-destructive/30'
+                )}
               >
-                <div className="flex aspect-video w-full items-center justify-center rounded-t-xl border-b bg-muted/50">
-                  <Icon className="size-10 text-muted-foreground" />
+                <div
+                  className={cn(
+                    'flex aspect-video w-full flex-col items-center justify-center gap-2 rounded-t-xl border-b px-4',
+                    isProcessing && 'bg-primary/5',
+                    isError && 'bg-destructive/5',
+                    !isProcessing && !isError && 'bg-muted/50'
+                  )}
+                >
+                  {isProcessing ? (
+                    <>
+                      <Loader2 className="size-10 animate-spin text-primary" />
+                      <span className="text-xs font-medium text-muted-foreground">
+                        {entry.progress != null ? `${entry.progress}%` : 'Processing...'}
+                      </span>
+                    </>
+                  ) : isError ? (
+                    <AlertCircle className="size-10 text-destructive" />
+                  ) : (
+                    <Icon className="size-10 text-muted-foreground" />
+                  )}
                 </div>
                 <CardContent className="px-4">
                   <p className="truncate text-sm font-medium" title={entry.title}>
                     {truncateTitle(entry.title, 28)}
                   </p>
                   <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
-                    <span>{label}</span>
-                    {entry.duration != null && entry.duration > 0 && (
+                    {isProcessing ? (
+                      <span>Processing...</span>
+                    ) : isError ? (
+                      <span className="text-destructive">Failed</span>
+                    ) : (
                       <>
-                        <span aria-hidden>·</span>
-                        <span>{formatDuration(entry.duration)}</span>
-                      </>
-                    )}
-                    {entry.type === 'project' && entry.clipsCount != null && entry.clipsCount > 0 && (
-                      <>
-                        <span aria-hidden>·</span>
-                        <span>{entry.clipsCount} clips</span>
+                        <span>{label}</span>
+                        {entry.duration != null && entry.duration > 0 && (
+                          <>
+                            <span aria-hidden>·</span>
+                            <span>{formatDuration(entry.duration)}</span>
+                          </>
+                        )}
+                        {entry.type === 'project' && entry.clipsCount != null && entry.clipsCount > 0 && (
+                          <>
+                            <span aria-hidden>·</span>
+                            <span>{entry.clipsCount} clips</span>
+                          </>
+                        )}
                       </>
                     )}
                   </div>
+                  {isProcessing && entry.progress != null && (
+                    <Progress value={entry.progress} className="mt-2 h-1.5" />
+                  )}
                 </CardContent>
                 <CardFooter className="pb-4 px-4">
-                  <Button variant="outline" size="sm" className="w-full" asChild>
-                    <Link href={href}>
-                      <ExternalLink className="mr-1.5 size-3.5" />
-                      Open
-                    </Link>
-                  </Button>
+                  {isProcessing || isError ? (
+                    <Button variant="outline" size="sm" className="w-full" disabled>
+                      {isProcessing ? 'Processing...' : 'Failed'}
+                    </Button>
+                  ) : (
+                    <Button variant="outline" size="sm" className="w-full" asChild>
+                      <Link href={href}>
+                        <ExternalLink className="mr-1.5 size-3.5" />
+                        Open
+                      </Link>
+                    </Button>
+                  )}
                 </CardFooter>
               </Card>
             );

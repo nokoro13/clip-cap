@@ -8,6 +8,10 @@ export type ProjectIndexEntry = {
   type: 'editor' | 'project';
   duration?: number;
   clipsCount?: number;
+  /** When processing, card shows loading state */
+  status?: 'processing' | 'completed' | 'error';
+  /** 0-100, for progress bar during processing */
+  progress?: number;
 };
 
 function getIndexKey(experienceId: string): string {
@@ -46,4 +50,25 @@ export function addProjectToIndex(
   };
   const next = [entry, ...entries.filter((e) => e.id !== entry.id)].slice(0, MAX_PROJECTS);
   setProjectIndex(experienceId, next);
+}
+
+export function updateProjectInIndex(
+  experienceId: string,
+  projectId: string,
+  updates: Partial<Pick<ProjectIndexEntry, 'status' | 'progress' | 'title' | 'duration' | 'clipsCount'>>
+): void {
+  const entries = getProjectIndex(experienceId);
+  const next = entries.map((e) =>
+    e.id === projectId ? { ...e, ...updates } : e
+  );
+  setProjectIndex(experienceId, next);
+}
+
+/** Dispatch this event to notify galleries to refresh (e.g. after updating a processing project) */
+export const PROJECT_INDEX_UPDATE_EVENT = 'clipcap-project-index-update';
+
+export function notifyProjectIndexUpdate(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent(PROJECT_INDEX_UPDATE_EVENT));
+  }
 }
