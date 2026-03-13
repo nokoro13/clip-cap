@@ -3,7 +3,7 @@
 import { Player, PlayerRef } from "@remotion/player";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useParams } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, Crop } from "lucide-react";
 import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
@@ -39,6 +39,8 @@ import {
   isGoogleFont,
 } from "@/lib/google-fonts-list";
 import type { Caption } from "@remotion/captions";
+import { Timeline } from "@/components/timeline/Timeline";
+import { VideoCropDialog } from "@/components/video-crop-dialog";
 
 const FPS = 30;
 
@@ -621,7 +623,6 @@ export default function EditorPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const playerRef = useRef<PlayerRef>(null);
-  const timelineRef = useRef<HTMLDivElement>(null);
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoDuration, setVideoDuration] = useState(300); // Default 10 seconds at 30fps
@@ -640,10 +641,6 @@ export default function EditorPage() {
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
   const [currentFrame, setCurrentFrame] = useState(0);
   const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(null);
-  const [dragging, setDragging] = useState<{
-    id: string;
-    type: "move" | "start" | "end";
-  } | null>(null);
   const [subtitleMode, setSubtitleMode] =
     useState<SubtitleMode>("segment-highlight");
   const [highlightColor, setHighlightColor] = useState("#facc15"); // Yellow default
@@ -655,6 +652,13 @@ export default function EditorPage() {
   ); // Original segments before splitting
   const [experienceId, setExperienceId] = useState<string | null>(null); // For back navigation
   const [sourceProjectId, setSourceProjectId] = useState<string | null>(null); // For navigating back to gallery when editing clips
+  const [videoTransform, setVideoTransform] = useState({
+    scale: 1.0,
+    offsetX: 0,
+    offsetY: 0,
+  });
+  const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
+  const [showCropDialog, setShowCropDialog] = useState(false);
 
   // Load video and captions from URL params or localStorage
   useEffect(() => {
@@ -772,6 +776,17 @@ export default function EditorPage() {
           if (project.sourceProjectId) {
             setSourceProjectId(project.sourceProjectId);
           }
+
+          // Load video transform and aspect ratio
+          if (project.videoTransform) {
+            setVideoTransform(project.videoTransform);
+          }
+          if (
+            typeof project.videoAspectRatio === "number" &&
+            project.videoAspectRatio > 0
+          ) {
+            setVideoAspectRatio(project.videoAspectRatio);
+          }
         } catch (e) {
           console.error("Failed to parse stored project:", e);
         }
@@ -825,6 +840,42 @@ export default function EditorPage() {
 
     loadData();
   }, [params.id, searchParams]);
+
+  // Persist videoTransform and videoAspectRatio to project in localStorage
+  useEffect(() => {
+    const projectId = params.id as string;
+    if (!projectId || typeof localStorage === "undefined") return;
+    const stored = localStorage.getItem(`project-${projectId}`);
+    if (!stored) return;
+    try {
+      const project = JSON.parse(stored);
+      localStorage.setItem(
+        `project-${projectId}`,
+        JSON.stringify({ ...project, videoTransform, videoAspectRatio })
+      );
+    } catch {
+      // ignore
+    }
+  }, [params.id, videoTransform, videoAspectRatio]);
+
+  // Load video dimensions when videoUrl changes so 9:16 is detected for crop
+  useEffect(() => {
+    if (!videoUrl) return;
+    const video = document.createElement("video");
+    video.muted = true;
+    video.playsInline = true;
+    const onLoadedMetadata = () => {
+      if (video.videoHeight > 0) {
+        setVideoAspectRatio(video.videoWidth / video.videoHeight);
+      }
+    };
+    video.addEventListener("loadedmetadata", onLoadedMetadata);
+    video.src = videoUrl;
+    return () => {
+      video.removeEventListener("loadedmetadata", onLoadedMetadata);
+      video.src = "";
+    };
+  }, [videoUrl]);
 
   // Re-apply max words limit when setting changes
   useEffect(() => {
@@ -1032,75 +1083,6 @@ export default function EditorPage() {
     [selectedSubtitle]
   );
 
-  const handleTimelineClick = useCallback(
-    (e: React.MouseEvent<HTMLDivElement>) => {
-      if (!timelineRef.current || dragging) return;
-      const rect = timelineRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const frame = Math.round((x / rect.width) * videoDuration);
-      playerRef.current?.seekTo(Math.max(0, Math.min(frame, videoDuration)));
-    },
-    [dragging, videoDuration]
-  );
-
-  const handleSubtitleDragStart = useCallback(
-    (e: React.MouseEvent, id: string, type: "move" | "start" | "end") => {
-      e.stopPropagation();
-      setDragging({ id, type });
-      setSelectedSubtitle(id);
-    },
-    []
-  );
-
-  useEffect(() => {
-    if (!dragging) return;
-
-    const handleMouseMove = (e: MouseEvent) => {
-      if (!timelineRef.current) return;
-      const rect = timelineRef.current.getBoundingClientRect();
-      const x = e.clientX - rect.left;
-      const frame = Math.round((x / rect.width) * videoDuration);
-
-      setSubtitles((prev) =>
-        prev.map((sub) => {
-          if (sub.id !== dragging.id) return sub;
-
-          const duration = sub.endFrame - sub.startFrame;
-
-          if (dragging.type === "move") {
-            const newStart = Math.max(
-              0,
-              Math.min(frame - duration / 2, videoDuration - duration)
-            );
-            return {
-              ...sub,
-              startFrame: Math.round(newStart),
-              endFrame: Math.round(newStart + duration),
-            };
-          } else if (dragging.type === "start") {
-            const newStart = Math.max(0, Math.min(frame, sub.endFrame - 15));
-            return { ...sub, startFrame: newStart };
-          } else {
-            const newEnd = Math.min(
-              videoDuration,
-              Math.max(frame, sub.startFrame + 15)
-            );
-            return { ...sub, endFrame: newEnd };
-          }
-        })
-      );
-    };
-
-    const handleMouseUp = () => setDragging(null);
-
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
-    return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
-    };
-  }, [dragging, videoDuration]);
-
   const MIN_LEFT_PANEL = 260;
   const MAX_LEFT_PANEL = 560;
 
@@ -1155,6 +1137,34 @@ export default function EditorPage() {
   const handleExport = useCallback(() => {
     // For now, just show an alert. In production, this would trigger Lambda rendering
     alert("Export functionality requires Remotion Lambda setup. Coming soon!");
+  }, []);
+
+  const handleSeek = useCallback(
+    (frame: number) => {
+      playerRef.current?.seekTo(Math.max(0, Math.min(frame, videoDuration)));
+    },
+    [videoDuration]
+  );
+
+  // Keyboard shortcut for splitting
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "s" || e.key === "S") {
+        const activeElement = document.activeElement;
+        // Don't trigger if user is typing in an input/textarea
+        if (
+          activeElement?.tagName === "INPUT" ||
+          activeElement?.tagName === "TEXTAREA"
+        ) {
+          return;
+        }
+        e.preventDefault();
+        // Trigger split - the Timeline component will handle it
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
   if (isLoading) {
@@ -2182,6 +2192,8 @@ export default function EditorPage() {
                 videoStartFrom,
                 subtitleMode,
                 highlightColor,
+                videoTransform,
+                videoAspectRatio,
               }}
               durationInFrames={videoDuration}
               fps={FPS}
@@ -2192,100 +2204,41 @@ export default function EditorPage() {
               loop
             />
           </div>
-          <footer className="shrink-0 border-t border-border bg-secondary w-full">
-            {/* Time markers */}
-            <div className="mb-1 flex justify-between px-1">
-              {Array.from({ length: 11 }, (_, i) => {
-                const totalSeconds = videoDuration / FPS;
-                const markerSeconds = (i / 10) * totalSeconds;
-                return (
-                  <span key={i} className="text-[10px] text-muted-foreground">
-                    {Math.floor(markerSeconds)}s
-                  </span>
-                );
-              })}
-            </div>
-
-            {/* Timeline track */}
-            <div
-              ref={timelineRef}
-              onClick={handleTimelineClick}
-              className="relative h-14 cursor-pointer overflow-hidden rounded-lg bg-background"
+          {/* Crop controls - between player and timeline */}
+          <div className="flex items-center justify-center pb-4">
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setShowCropDialog(true)}
+              disabled={!videoUrl}
             >
-              {/* Grid lines */}
-              {Array.from({ length: 10 }, (_, i) => (
-                <div
-                  key={i}
-                  className="absolute bottom-0 top-0 w-px bg-border"
-                  style={{ left: `${(i + 1) * 10}%` }}
-                />
-              ))}
-
-              {/* Subtitle bars */}
-              {subtitles.map((sub, i) => {
-                const left = (sub.startFrame / videoDuration) * 100;
-                const width =
-                  ((sub.endFrame - sub.startFrame) / videoDuration) * 100;
-                const color = SUBTITLE_COLORS[i % SUBTITLE_COLORS.length];
-                const isSelected = selectedSubtitle === sub.id;
-
-                return (
-                  <div
-                    key={sub.id}
-                    className={cn(
-                      "absolute bottom-2 top-2 flex items-center overflow-hidden rounded",
-                      isSelected ? "ring-2 ring-white" : "opacity-70"
-                    )}
-                    style={{
-                      left: `${left}%`,
-                      width: `${width}%`,
-                      backgroundColor: color,
-                      cursor: dragging ? "grabbing" : "grab",
-                    }}
-                    onMouseDown={(e) =>
-                      handleSubtitleDragStart(e, sub.id, "move")
-                    }
-                  >
-                    {/* Left resize handle */}
-                    <div
-                      onMouseDown={(e) =>
-                        handleSubtitleDragStart(e, sub.id, "start")
-                      }
-                      className="absolute bottom-0 left-0 top-0 w-2 cursor-ew-resize bg-black/30"
-                    />
-
-                    {/* Label */}
-                    <div className="flex-1 truncate px-3 text-[11px] font-medium text-white drop-shadow">
-                      {sub.text}
-                    </div>
-
-                    {/* Right resize handle */}
-                    <div
-                      onMouseDown={(e) =>
-                        handleSubtitleDragStart(e, sub.id, "end")
-                      }
-                      className="absolute bottom-0 right-0 top-0 w-2 cursor-ew-resize bg-black/30"
-                    />
-                  </div>
-                );
-              })}
-
-              {/* Playhead */}
-              <div
-                className="pointer-events-none absolute bottom-0 top-0 z-10 w-0.5 bg-destructive"
-                style={{ left: `${(currentFrame / videoDuration) * 100}%` }}
-              >
-                <div className="absolute -left-1.5 -top-1 size-3 rounded-full bg-destructive" />
-              </div>
-            </div>
-
-            {/* Current time display */}
-            <div className="mt-2 flex justify-center">
-              <span className="font-mono text-xs text-muted-foreground">
-                {formatTime(currentFrame)} / {formatTime(videoDuration)}
-              </span>
-            </div>
-          </footer>
+              <Crop className="h-4 w-4" />
+            </Button>
+          </div>
+          <VideoCropDialog
+            open={showCropDialog}
+            onOpenChange={setShowCropDialog}
+            videoUrl={videoUrl}
+            currentTransform={videoTransform}
+            onApply={setVideoTransform}
+            compositionWidth={1080}
+            compositionHeight={1920}
+            initialVideoAspectRatio={videoAspectRatio}
+            onVideoDimensionsLoaded={(w, h) =>
+              setVideoAspectRatio(h > 0 ? w / h : 16 / 9)
+            }
+          />
+          <Timeline
+            subtitles={subtitles}
+            setSubtitles={setSubtitles}
+            selectedSubtitle={selectedSubtitle}
+            setSelectedSubtitle={setSelectedSubtitle}
+            currentFrame={currentFrame}
+            videoDuration={videoDuration}
+            fps={FPS}
+            videoUrl={videoUrl}
+            onSeek={handleSeek}
+          />
         </main>
       </div>
     </div>

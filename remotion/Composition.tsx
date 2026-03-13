@@ -140,6 +140,12 @@ export type Subtitle = {
 
 export type SubtitleMode = 'word' | 'segment' | 'segment-highlight' | 'segment-background-highlight';
 
+export type VideoTransform = {
+  scale: number;
+  offsetX: number;
+  offsetY: number;
+};
+
 export type SubtitleCompositionProps = {
   videoUrl: string | null;
   subtitles: Subtitle[];
@@ -147,6 +153,8 @@ export type SubtitleCompositionProps = {
   videoStartFrom?: number;
   subtitleMode?: SubtitleMode; // How to display subtitles
   highlightColor?: string; // Color for highlighted words
+  videoTransform?: VideoTransform; // Pan/zoom for 16:9 or 9:16 video in 9:16 canvas
+  videoAspectRatio?: number; // width/height. 9/16 for portrait, 16/9 for landscape
 };
 
 // ============ POSITION HELPER ============
@@ -654,19 +662,67 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
   videoStartFrom = 0,
   subtitleMode = 'word',
   highlightColor = '#facc15', // Yellow by default
+  videoTransform,
+  videoAspectRatio = 16 / 9,
 }) => {
   const { fps } = useVideoConfig();
   const videoStartFrame = Math.round((videoStartFrom / 1000) * fps);
 
+  const isPortrait = videoAspectRatio < 0.7;
+
+  const hasCustomTransform =
+    videoTransform &&
+    (videoTransform.scale !== 1 ||
+      videoTransform.offsetX !== 0 ||
+      videoTransform.offsetY !== 0);
+
+  // Cover math: 16:9 -> fill height; 9:16 -> fill width. Output canvas is always 9:16.
+  const COMPOSITION_WIDTH = 1080;
+  const COMPOSITION_HEIGHT = 1920;
+  const coverWidth =
+    COMPOSITION_HEIGHT * videoAspectRatio > COMPOSITION_WIDTH
+      ? COMPOSITION_HEIGHT * videoAspectRatio
+      : COMPOSITION_WIDTH;
+  const coverHeight =
+    COMPOSITION_HEIGHT * videoAspectRatio > COMPOSITION_WIDTH
+      ? COMPOSITION_HEIGHT
+      : COMPOSITION_WIDTH / videoAspectRatio;
+
+  const videoWrapperStyle = hasCustomTransform
+    ? {
+        position: 'absolute' as const,
+        left: '50%',
+        top: '50%',
+        width: coverWidth * videoTransform.scale,
+        height: coverHeight * videoTransform.scale,
+        transform: `translate(calc(-50% + ${videoTransform.offsetX}px), calc(-50% + ${videoTransform.offsetY}px))`,
+      }
+    : null;
+
+  const videoStyle: React.CSSProperties =
+    isPortrait || hasCustomTransform
+      ? { width: '100%', height: '100%', objectFit: 'cover' }
+      : { width: '100%', height: '100%', objectFit: 'contain' };
+
   return (
     <GoogleFontLoader style={style}>
-      <AbsoluteFill style={{ backgroundColor: '#000' }}>
+      <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
         {videoUrl && (
-          <OffthreadVideo
-            src={videoUrl}
-            startFrom={videoStartFrame}
-            style={{ width: '100%', height: '100%', objectFit: 'contain' }}
-          />
+          hasCustomTransform && videoWrapperStyle ? (
+            <div style={videoWrapperStyle}>
+              <OffthreadVideo
+                src={videoUrl}
+                startFrom={videoStartFrame}
+                style={videoStyle}
+              />
+            </div>
+          ) : (
+            <OffthreadVideo
+              src={videoUrl}
+              startFrom={videoStartFrame}
+              style={videoStyle}
+            />
+          )
         )}
 
         {!videoUrl && (

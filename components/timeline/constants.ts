@@ -1,0 +1,31 @@
+// Timeline dimensions
+export const COLLAPSED_HEIGHT = 40;
+export const EXPANDED_HEIGHT = 300;
+export const TRACK_HEIGHT = 48;
+export const RULER_HEIGHT = 32;
+export const HEADER_HEIGHT = 40;
+
+// Zoom levels
+export const MIN_ZOOM = 10; // pixels per second
+export const MAX_ZOOM = 200; // pixels per second
+export const DEFAULT_ZOOM = 50; // pixels per second
+
+// Segment constraints
+export const MIN_SEGMENT_FRAMES = 15;
+export const TRIM_HANDLE_WIDTH = 8;
+
+// Colors for subtitle segments (from editor page)
+export const SUBTITLE_COLORS = [
+  "#3b82f6",
+  "#8b5cf6",
+  "#ec4899",
+  "#f97316",
+  "#22c55e",
+  "#06b6d4",
+];
+
+// Interaction
+export const SNAP_THRESHOLD = 5; // frames
+
+// Animation
+export const TRANSITION_DURATION = 300; // ms

@@ -358,9 +358,32 @@ export default function ProjectGalleryPage() {
       youtubeVideoId: project.youtubeVideoId, // So editor can fetch a fresh stream URL
     };
 
+    // Preserve videoTransform and videoAspectRatio if user had previously adjusted crop in editor
+    const existingProject = localStorage.getItem(`project-${clip.id}`);
+    let toSave = editorData as Record<string, unknown>;
+    if (existingProject) {
+      try {
+        const parsed = JSON.parse(existingProject) as {
+          videoTransform?: unknown;
+          videoAspectRatio?: unknown;
+        };
+        if (parsed.videoTransform) {
+          toSave = { ...toSave, videoTransform: parsed.videoTransform };
+        }
+        if (
+          typeof parsed.videoAspectRatio === "number" &&
+          parsed.videoAspectRatio > 0
+        ) {
+          toSave = { ...toSave, videoAspectRatio: parsed.videoAspectRatio };
+        }
+      } catch {
+        // ignore
+      }
+    }
+
     // Store the video URL in sessionStorage for the editor (editor will refresh from API if youtubeVideoId)
     sessionStorage.setItem(`video-${clip.id}`, videoUrl);
-    localStorage.setItem(`project-${clip.id}`, JSON.stringify(editorData));
+    localStorage.setItem(`project-${clip.id}`, JSON.stringify(toSave));
 
     // Navigate to editor
     router.push(`/editor/${clip.id}`);
