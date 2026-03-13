@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { openAiWhisperApiToCaptions } from '@remotion/openai-whisper';
 import { openai } from '@/lib/openai';
+import { getFileForWhisper } from '@/lib/extract-audio';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -13,15 +14,6 @@ export async function POST(request: NextRequest) {
     if (!file) {
       return NextResponse.json(
         { error: 'No file provided' },
-        { status: 400 }
-      );
-    }
-
-    // Check file size (25MB limit for Whisper API)
-    const MAX_SIZE = 25 * 1024 * 1024; // 25MB
-    if (file.size > MAX_SIZE) {
-      return NextResponse.json(
-        { error: 'File too large. Maximum size is 25MB.' },
         { status: 400 }
       );
     }
@@ -45,13 +37,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Transcribe using OpenAI Whisper with both word and segment timestamps
-    const transcription = await openai.audio.transcriptions.create({
-      file: file,
-      model: 'whisper-1',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['word', 'segment'],
-    });
+    // For large video files, extract audio first to stay under Whisper's 25MB limit
+    const { file: fileForWhisper, cleanup } = await getFileForWhisper(file);
+    try {
+      // Transcribe using OpenAI Whisper with both word and segment timestamps
+      const transcription = await openai.audio.transcriptions.create({
+        file: fileForWhisper,
+        model: 'whisper-1',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['word', 'segment'],
+      });
 
     // Convert to Remotion Caption format (word-level for highlighting)
     const { captions: wordCaptions } = openAiWhisperApiToCaptions({ transcription });
@@ -86,6 +81,9 @@ export async function POST(request: NextRequest) {
       language: transcription.language || 'en',
       text: transcription.text,
     });
+    } finally {
+      cleanup();
+    }
   } catch (error) {
     console.error('Transcription error:', error);
     

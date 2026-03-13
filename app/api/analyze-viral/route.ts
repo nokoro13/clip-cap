@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { analyzeViralFromInput } from '@/lib/analyze-viral';
+import { getFileForWhisper } from '@/lib/extract-audio';
 
 export const runtime = 'nodejs';
 export const maxDuration = 120;
@@ -18,17 +19,33 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const { captions, segmentCaptions, clips, duration, fullTranscript } =
-      await analyzeViralFromInput({ file, audioUrl, videoDuration });
+    let fileForAnalysis = file;
+    let cleanup = () => {};
+    if (file) {
+      const result = await getFileForWhisper(file);
+      fileForAnalysis = result.file;
+      cleanup = result.cleanup;
+    }
 
-    return NextResponse.json({
-      success: true,
-      captions,
-      segmentCaptions,
-      clips,
-      duration,
-      fullTranscript,
-    });
+    try {
+      const { captions, segmentCaptions, clips, duration, fullTranscript } =
+        await analyzeViralFromInput({
+          file: fileForAnalysis,
+          audioUrl,
+          videoDuration,
+        });
+
+      return NextResponse.json({
+        success: true,
+        captions,
+        segmentCaptions,
+        clips,
+        duration,
+        fullTranscript,
+      });
+    } finally {
+      cleanup();
+    }
   } catch (error) {
     console.error('Viral analysis error:', error);
 

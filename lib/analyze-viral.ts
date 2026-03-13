@@ -1,6 +1,7 @@
 import { openAiWhisperApiToCaptions } from '@remotion/openai-whisper';
 import type { Caption } from '@remotion/captions';
 import { openai } from '@/lib/openai';
+import { getFileForWhisper } from '@/lib/extract-audio';
 
 const VIRAL_DETECTION_PROMPT = `You are an expert at identifying viral short-form video content. Analyze the following video transcript and identify the most engaging, shareable, and viral-worthy moments that would work well as TikTok, YouTube Shorts, or Instagram Reels clips.
 
@@ -91,14 +92,16 @@ export async function analyzeViralFromInput(
   }> = [];
 
   if (file) {
-    const transcription = await openai.audio.transcriptions.create({
-      file,
-      model: 'whisper-1',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['word', 'segment'],
-    });
+    const { file: fileForWhisper, cleanup } = await getFileForWhisper(file);
+    try {
+      const transcription = await openai.audio.transcriptions.create({
+        file: fileForWhisper,
+        model: 'whisper-1',
+        response_format: 'verbose_json',
+        timestamp_granularities: ['word', 'segment'],
+      });
 
-    const result = openAiWhisperApiToCaptions({ transcription });
+      const result = openAiWhisperApiToCaptions({ transcription });
     captions = result.captions;
     duration = transcription.duration || 0;
 
@@ -123,6 +126,9 @@ export async function analyzeViralFromInput(
         })),
       };
     });
+    } finally {
+      cleanup();
+    }
   } else if (audioUrl) {
     const response = await fetch(audioUrl);
     if (!response.ok) {

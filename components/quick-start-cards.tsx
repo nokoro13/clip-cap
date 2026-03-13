@@ -190,7 +190,7 @@ export function QuickStartCards({ className }: QuickStartCardsProps) {
           <SimpleUploadDialog
             onVideoSelect={handleSingleVideoSelect}
             title="Generate Subtitles"
-            description="MP4 or MOV, Max size: 25MB for transcription"
+            description="MP4 or MOV, Max size: 500MB (audio extracted for transcription)"
             trigger={
               <button type="button" className="h-full w-full text-left">
                 <div
