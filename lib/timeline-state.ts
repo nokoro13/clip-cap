@@ -1,5 +1,6 @@
 import type {
   VideoSegment,
+  VideoTransform,
   DeletedRange,
   EnhancedSubtitle,
 } from "@/components/timeline/types";
@@ -9,7 +10,8 @@ import type { WordTiming } from "@/remotion/Composition";
 export function createInitialVideoSegment(
   videoUrl: string,
   durationFrames: number,
-  sourceStartFrame = 0
+  sourceStartFrame = 0,
+  transform?: VideoTransform
 ): VideoSegment {
   return {
     id: `video-0-${Date.now()}`,
@@ -18,6 +20,7 @@ export function createInitialVideoSegment(
     sourceStartFrame,
     sourceEndFrame: sourceStartFrame + durationFrames,
     sourceVideoUrl: videoUrl,
+    ...(transform && { transform }),
   };
 }
 
@@ -119,7 +122,7 @@ function processSubtitleWithWords(
     const endMs = words[words.length - 1].endMs;
     const startFrame = Math.round((startMs / 1000) * fps);
     const endFrame = Math.round((endMs / 1000) * fps);
-    const text = words.map((w) => w.text).join(" ");
+    const text = words.map((w) => w.text.trim()).join(" ");
     return {
       ...sub,
       id: groups.length > 1 ? `${baseId}-split-${idx + 1}-${Date.now()}` : sub.id,

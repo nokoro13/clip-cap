@@ -66,7 +66,7 @@ export async function POST(request: NextRequest) {
         endMs: segment.end * 1000,
         text: segment.text.trim(),
         words: segmentWords.map((w) => ({
-          text: w.text,
+          text: w.text.trim(),
           startMs: w.startMs,
           endMs: w.endMs,
         })),

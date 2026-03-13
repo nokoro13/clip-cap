@@ -51,6 +51,9 @@ type VideoCropDialogProps = {
   compositionHeight?: number;
   initialVideoAspectRatio?: number;
   onVideoDimensionsLoaded?: (width: number, height: number) => void;
+  /** Trim the video to this range (seconds). When set, the crop dialog shows and loops this clip. */
+  trimStartSeconds?: number;
+  trimEndSeconds?: number;
 };
 
 function transformToFramePosition(
@@ -120,6 +123,8 @@ export function VideoCropDialog({
   compositionHeight = 1920,
   initialVideoAspectRatio,
   onVideoDimensionsLoaded,
+  trimStartSeconds = 0,
+  trimEndSeconds,
 }: VideoCropDialogProps) {
   const [videoAspectRatio, setVideoAspectRatio] = useState<number | null>(null);
   const effectiveAspect =
@@ -167,8 +172,28 @@ export function VideoCropDialog({
       setVideoAspectRatio(w / h);
       onVideoDimensionsLoaded?.(w, h);
     }
+    v.currentTime = trimStartSeconds;
     v.play().catch(() => {});
-  }, [onVideoDimensionsLoaded]);
+  }, [onVideoDimensionsLoaded, trimStartSeconds]);
+
+  const handleTimeUpdate = useCallback(() => {
+    const v = videoRef.current;
+    if (!v || trimEndSeconds == null) return;
+    if (v.currentTime >= trimEndSeconds) {
+      v.currentTime = trimStartSeconds;
+    }
+  }, [trimStartSeconds, trimEndSeconds]);
+
+  // When dialog opens, ensure video plays (handles case where metadata already loaded)
+  useEffect(() => {
+    if (open && videoUrl) {
+      const v = videoRef.current;
+      if (v && v.readyState >= 2) {
+        v.currentTime = trimStartSeconds;
+        v.play().catch(() => {});
+      }
+    }
+  }, [open, videoUrl, trimStartSeconds]);
 
   useEffect(() => {
     if (open) {
@@ -368,7 +393,9 @@ export function VideoCropDialog({
                     )}
                     muted
                     playsInline
+                    autoPlay
                     onLoadedMetadata={handleVideoLoadedMetadata}
+                    onTimeUpdate={trimEndSeconds != null ? handleTimeUpdate : undefined}
                   />
                 </div>
 

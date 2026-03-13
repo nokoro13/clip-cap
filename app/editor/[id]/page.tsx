@@ -3,7 +3,7 @@
 import { Player, PlayerRef } from "@remotion/player";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useParams } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette, Crop, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown } from "lucide-react";
 import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
@@ -44,9 +44,11 @@ import {
   type VideoSegment,
   type DeletedRange,
   type EnhancedSubtitle,
+  TEXT_TRACK_COLORS,
   DeletionDialog,
   getStoredDeletePreference,
 } from "@/components/timeline";
+import type { CustomTextTrack, CustomTextSegment, CustomTextStyle } from "@/components/timeline/types";
 import {
   createInitialVideoSegment,
   applyDeletedRangesToSubtitles,
@@ -56,6 +58,32 @@ import {
 import { VideoCropDialog } from "@/components/video-crop-dialog";
 
 const FPS = 30;
+
+const DEFAULT_CUSTOM_TEXT_STYLE: CustomTextStyle = {
+  fontFamily: "Inter",
+  fontSize: 60,
+  fontWeight: 700,
+  fontStyle: "normal",
+  lineHeight: 1.2,
+  textColor: "#ffffff",
+  backgroundColor: "#000000",
+  backgroundOpacity: 0.7,
+  strokeColor: "#000000",
+  strokeWidth: 0,
+  shadowColor: "#000000",
+  shadowBlur: 8,
+  shadowOpacity: 1,
+  shadowOffsetX: 2,
+  shadowOffsetY: 2,
+  position: "top",
+  positionY: 20,
+  animation: "pop",
+  borderRadius: 8,
+  paddingX: 24,
+  paddingY: 16,
+  containerMarginX: 40,
+  uppercase: false,
+};
 
 const SUBTITLE_COLORS = [
   "#3b82f6",
@@ -497,7 +525,10 @@ function segmentCaptionsToSubtitles(
         text: segment.text.trim(),
         startFrame,
         endFrame: adjustedEndFrame,
-        words: segment.words,
+        words: segment.words.map((w) => ({
+          ...w,
+          text: w.text.trim(),
+        })),
       };
     })
     .filter((sub) => sub.text.length > 0);
@@ -527,10 +558,10 @@ function splitSegmentByMaxWords(
 
     result.push({
       id: `${segment.id}-chunk-${i}`,
-      text: chunkWords.map((w) => w.text).join(" "),
+      text: chunkWords.map((w) => w.text.trim()).join(" "),
       startFrame,
       endFrame: endFrame <= startFrame ? startFrame + 1 : endFrame,
-      words: chunkWords,
+      words: chunkWords.map((w) => ({ ...w, text: w.text.trim() })),
     });
   }
 
@@ -587,13 +618,13 @@ function groupWordsIntoSegments(
       segments.push({
         id: `grouped-${segments.length}-${groupStartMs}`,
         text: currentGroup
-          .map((c) => c.text)
+          .map((c) => c.text.trim())
           .join(" ")
           .trim(),
         startFrame,
         endFrame: endFrame <= startFrame ? startFrame + 1 : endFrame,
         words: currentGroup.map((c) => ({
-          text: c.text,
+          text: c.text.trim(),
           startMs: c.startMs,
           endMs: c.endMs,
         })),
@@ -616,13 +647,13 @@ function groupWordsIntoSegments(
     segments.push({
       id: `grouped-${segments.length}-${groupStartMs}`,
       text: currentGroup
-        .map((c) => c.text)
+        .map((c) => c.text.trim())
         .join(" ")
         .trim(),
       startFrame,
       endFrame: endFrame <= startFrame ? startFrame + 1 : endFrame,
       words: currentGroup.map((c) => ({
-        text: c.text,
+        text: c.text.trim(),
         startMs: c.startMs,
         endMs: c.endMs,
       })),
@@ -677,6 +708,18 @@ export default function EditorPage() {
   });
   const [videoAspectRatio, setVideoAspectRatio] = useState<number>(16 / 9);
   const [showCropDialog, setShowCropDialog] = useState(false);
+  /** When opening crop dialog: url/trim for preview; segmentId when cropping a specific segment */
+  const [cropDialogClip, setCropDialogClip] = useState<{
+    url: string;
+    trimStartSeconds: number;
+    trimEndSeconds?: number;
+    segmentId?: string;
+  } | null>(null);
+  const [customTextTracks, setCustomTextTracks] = useState<CustomTextTrack[]>([]);
+  const [customTextSegments, setCustomTextSegments] = useState<CustomTextSegment[]>([]);
+  const [selectedTextSegment, setSelectedTextSegment] = useState<string | null>(null);
+  const [leftPanelTab, setLeftPanelTab] = useState<"styling" | "subtitles" | "text">("styling");
+  const [collapsedTextTrackIds, setCollapsedTextTrackIds] = useState<Set<string>>(new Set());
 
   // Load video and captions from URL params or localStorage
   useEffect(() => {
@@ -823,6 +866,14 @@ export default function EditorPage() {
           ) {
             setVideoAspectRatio(project.videoAspectRatio);
           }
+
+          // Load custom text tracks and segments
+          if (project.customTextTracks && Array.isArray(project.customTextTracks)) {
+            setCustomTextTracks(project.customTextTracks);
+          }
+          if (project.customTextSegments && Array.isArray(project.customTextSegments)) {
+            setCustomTextSegments(project.customTextSegments);
+          }
         } catch (e) {
           console.error("Failed to parse stored project:", e);
         }
@@ -900,7 +951,12 @@ export default function EditorPage() {
                 ? Math.round((project.clipStartMs / 1000) * FPS)
                 : 0;
             setVideoSegments([
-              createInitialVideoSegment(videoUrl, videoDuration, sourceStartFrame),
+              createInitialVideoSegment(
+                videoUrl,
+                videoDuration,
+                sourceStartFrame,
+                project.videoTransform
+              ),
             ]);
           }
           if (project.deletedRanges && Array.isArray(project.deletedRanges)) {
@@ -941,12 +997,14 @@ export default function EditorPage() {
           videoAspectRatio,
           videoSegments,
           deletedRanges,
+          customTextTracks,
+          customTextSegments,
         })
       );
     } catch {
       // ignore
     }
-  }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges]);
+  }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments]);
 
   // Load video dimensions when videoUrl changes so 9:16 is detected for crop
   useEffect(() => {
@@ -1173,6 +1231,27 @@ export default function EditorPage() {
     [subtitleMode]
   );
 
+  type TextSegmentUpdate =
+    | (Omit<Partial<CustomTextSegment>, "style"> & { style?: Partial<CustomTextStyle> })
+    | ((seg: CustomTextSegment) => Omit<Partial<CustomTextSegment>, "style"> & { style?: Partial<CustomTextStyle> });
+
+  const updateTextSegment = useCallback(
+    (id: string, updates: TextSegmentUpdate) => {
+      setCustomTextSegments((prev) =>
+        prev.map((s) => {
+          if (s.id !== id) return s;
+          const patch = typeof updates === "function" ? updates(s) : updates;
+          if (patch.style) {
+            return { ...s, ...patch, style: { ...s.style, ...patch.style } as CustomTextStyle };
+          }
+          const { style: _omit, ...rest } = patch;
+          return { ...s, ...rest };
+        })
+      );
+    },
+    []
+  );
+
   const removeSubtitle = useCallback(
     (id: string) => {
       setSubtitles((prev) => prev.filter((s) => s.id !== id));
@@ -1392,6 +1471,11 @@ export default function EditorPage() {
         e.preventDefault();
         if (selectedSubtitle) {
           handleDeleteRequest(selectedSubtitle, null);
+        } else if (selectedTextSegment) {
+          setCustomTextSegments((prev) =>
+            prev.filter((s) => s.id !== selectedTextSegment)
+          );
+          setSelectedTextSegment(null);
         }
         return;
       }
@@ -1418,7 +1502,23 @@ export default function EditorPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedSubtitle, handleDeleteRequest]);
+  }, [selectedSubtitle, selectedTextSegment, handleDeleteRequest]);
+
+  // Scroll selected subtitle/text segment card into view when selection changes from timeline
+  useEffect(() => {
+    if (leftPanelTab === "subtitles" && selectedSubtitle) {
+      const el = document.querySelector(
+        `[data-subtitle-id="${selectedSubtitle}"]`
+      );
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+    if (leftPanelTab === "text" && selectedTextSegment) {
+      const el = document.querySelector(
+        `[data-text-segment-id="${selectedTextSegment}"]`
+      );
+      el?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }
+  }, [leftPanelTab, selectedSubtitle, selectedTextSegment]);
 
   if (isLoading) {
     return (
@@ -1492,9 +1592,10 @@ export default function EditorPage() {
           {!leftPanelCollapsed && (
             <>
           <Tabs
-            defaultValue="styling"
+            value={leftPanelTab}
+            onValueChange={(v) => setLeftPanelTab(v as "styling" | "subtitles" | "text")}
             className="flex flex-1 flex-row overflow-hidden pt-10"
-				orientation="vertical"
+            orientation="vertical"
           >
             <TabsList variant="line" className="shrink-0 mt-4 gap-4">
               <TabsTrigger value="styling" className="border-none">
@@ -1502,6 +1603,9 @@ export default function EditorPage() {
               </TabsTrigger>
               <TabsTrigger value="subtitles" className="border-none">
                 <Captions className="size-6" />
+              </TabsTrigger>
+              <TabsTrigger value="text" className="border-none">
+                <Type className="size-6" />
               </TabsTrigger>
             </TabsList>
             <div className="relative flex-1 flex min-h-0 flex-col">
@@ -2283,15 +2387,16 @@ export default function EditorPage() {
                   {subtitles.map((sub, i) => (
                     <div
                       key={sub.id}
+                      data-subtitle-id={sub.id}
                       onClick={() => {
                         setSelectedSubtitle(sub.id);
                         playerRef.current?.seekTo(sub.startFrame);
                       }}
                       className={cn(
-                        "cursor-pointer rounded-lg border bg-secondary p-3 transition-colors hover:bg-secondary/80",
+                        "cursor-pointer rounded-lg border p-3 transition-colors hover:bg-secondary/80",
                         selectedSubtitle === sub.id
-                          ? "border-primary"
-                          : "border-transparent"
+                          ? "border-primary bg-primary/10"
+                          : "border-transparent bg-secondary"
                       )}
                     >
                       <div className="mb-2 flex items-center justify-between">
@@ -2353,6 +2458,557 @@ export default function EditorPage() {
                   Add Subtitle
                 </Button>
               </TabsContent>
+
+              <TabsContent
+                value="text"
+                className="mt-0 outline-none p-4 overflow-auto"
+              >
+                <Label className="mb-2 text-muted-foreground">
+                  Custom Text Overlays
+                </Label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Add overlay text (e.g. &quot;Wait till the end!&quot;) at specific times.
+                </p>
+
+                {/* Quick add when no tracks */}
+                {customTextTracks.length === 0 && (
+                  <Button
+                    variant="default"
+                    className="w-full mb-4 border-dashed"
+                    onClick={() => {
+                      const frame = playerRef.current?.getCurrentFrame() ?? 0;
+                      const newTrack: CustomTextTrack = {
+                        id: `text-track-${Date.now()}`,
+                        name: `Text 1`,
+                        visible: true,
+                        color: TEXT_TRACK_COLORS[0],
+                      };
+                      const newSegment: CustomTextSegment = {
+                        id: `text-seg-${Date.now()}`,
+                        trackId: newTrack.id,
+                        text: "Your text here",
+                        startFrame: Math.min(frame, compositionDuration - 60),
+                        endFrame: Math.min(frame + 90, compositionDuration),
+                        style: { ...DEFAULT_CUSTOM_TEXT_STYLE },
+                      };
+                      setCustomTextTracks((prev) => [...prev, newTrack]);
+                      setCustomTextSegments((prev) => [...prev, newSegment]);
+                      setSelectedTextSegment(newSegment.id);
+                      playerRef.current?.seekTo(newSegment.startFrame);
+                    }}
+                  >
+                    <Plus className="mr-2 size-4" />
+                    Add text overlay
+                  </Button>
+                )}
+
+                {/* Tracks with nested segments - collapsible */}
+                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+                  {customTextTracks.map((track) => {
+                    const segments = customTextSegments.filter(
+                      (s) => s.trackId === track.id
+                    );
+                    const isExpanded = !collapsedTextTrackIds.has(track.id);
+                    return (
+                      <div
+                        key={track.id}
+                        className="rounded-lg border border-border bg-secondary/30 overflow-hidden"
+                      >
+                        <div className="flex items-center gap-1.5 p-2 pr-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={() =>
+                              setCollapsedTextTrackIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(track.id)) next.delete(track.id);
+                                else next.add(track.id);
+                                return next;
+                              })
+                            }
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="size-3.5" />
+                            ) : (
+                              <ChevronRight className="size-3.5" />
+                            )}
+                          </Button>
+                          <span
+                            className="shrink-0 w-2 h-2 rounded-full"
+                            style={{ backgroundColor: track.color }}
+                          />
+                          <span className="text-xs font-medium truncate flex-1">
+                            {track.name}
+                          </span>
+                          <Switch
+                            checked={track.visible}
+                            onCheckedChange={(visible) =>
+                              setCustomTextTracks((prev) =>
+                                prev.map((t) =>
+                                  t.id === track.id ? { ...t, visible } : t
+                                )
+                              )
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-1.5 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const frame =
+                                playerRef.current?.getCurrentFrame() ?? 0;
+                              const newSegment: CustomTextSegment = {
+                                id: `text-seg-${Date.now()}`,
+                                trackId: track.id,
+                                text: "Your text here",
+                                startFrame: Math.min(
+                                  frame,
+                                  compositionDuration - 60
+                                ),
+                                endFrame: Math.min(
+                                  frame + 90,
+                                  compositionDuration
+                                ),
+                                style: { ...DEFAULT_CUSTOM_TEXT_STYLE },
+                              };
+                              setCustomTextSegments((prev) => [
+                                ...prev,
+                                newSegment,
+                              ]);
+                              setSelectedTextSegment(newSegment.id);
+                              playerRef.current?.seekTo(newSegment.startFrame);
+                              setCollapsedTextTrackIds((prev) => {
+                                const next = new Set(prev);
+                                next.delete(track.id);
+                                return next;
+                              });
+                            }}
+                          >
+                            <Plus className="size-3 mr-0.5" />
+                            Add
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCustomTextTracks((prev) =>
+                                prev.filter((t) => t.id !== track.id)
+                              );
+                              setCustomTextSegments((prev) =>
+                                prev.filter((s) => s.trackId !== track.id)
+                              );
+                              if (
+                                customTextSegments.some(
+                                  (s) =>
+                                    s.id === selectedTextSegment &&
+                                    s.trackId === track.id
+                                )
+                              ) {
+                                setSelectedTextSegment(null);
+                              }
+                            }}
+                          >
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                        {isExpanded && (
+                          <div className="border-t border-border/50 px-2 pb-2 pt-1.5 space-y-1">
+                            {segments.length === 0 ? (
+                              <p className="text-[10px] text-muted-foreground py-1 px-2">
+                                No segments — click Add
+                              </p>
+                            ) : (
+                              segments.map((seg) => (
+                                <div
+                                  key={seg.id}
+                                  data-text-segment-id={seg.id}
+                                  onClick={() => {
+                                    setSelectedTextSegment(seg.id);
+                                    playerRef.current?.seekTo(seg.startFrame);
+                                  }}
+                                  className={cn(
+                                    "flex items-center gap-2 rounded-md border p-2 cursor-pointer transition-colors",
+                                    selectedTextSegment === seg.id
+                                      ? "border-primary bg-primary/10"
+                                      : "border-border/50 bg-muted/30 hover:bg-muted/50"
+                                  )}
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium truncate">
+                                      {seg.text || "Empty"}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      {formatTime(seg.startFrame)} -{" "}
+                                      {formatTime(seg.endFrame)}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {customTextTracks.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mb-4 border-dashed"
+                    onClick={() => {
+                      const newTrack: CustomTextTrack = {
+                        id: `text-track-${Date.now()}`,
+                        name: `Text ${customTextTracks.length + 1}`,
+                        visible: true,
+                        color:
+                          TEXT_TRACK_COLORS[
+                            customTextTracks.length % TEXT_TRACK_COLORS.length
+                          ],
+                      };
+                      setCustomTextTracks((prev) => [...prev, newTrack]);
+                      setCollapsedTextTrackIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(newTrack.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    <Plus className="mr-2 size-4" />
+                    Add track
+                  </Button>
+                )}
+
+                {customTextTracks.length > 0 && customTextSegments.length === 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-dashed"
+                    onClick={() => {
+                      const track = customTextTracks[0];
+                      if (!track) return;
+                      const frame =
+                        playerRef.current?.getCurrentFrame() ?? 0;
+                      const newSegment: CustomTextSegment = {
+                        id: `text-seg-${Date.now()}`,
+                        trackId: track.id,
+                        text: "Your text here",
+                        startFrame: Math.min(frame, compositionDuration - 60),
+                        endFrame: Math.min(frame + 90, compositionDuration),
+                        style: { ...DEFAULT_CUSTOM_TEXT_STYLE },
+                      };
+                      setCustomTextSegments((prev) => [...prev, newSegment]);
+                      setSelectedTextSegment(newSegment.id);
+                      playerRef.current?.seekTo(newSegment.startFrame);
+                    }}
+                  >
+                    <Plus className="mr-2 size-4" />
+                    Add first segment at playhead
+                  </Button>
+                )}
+
+                {/* Selected segment editor */}
+                {selectedTextSegment && (() => {
+                  const seg = customTextSegments.find(
+                    (s) => s.id === selectedTextSegment
+                  );
+                  if (!seg) return null;
+                  return (
+                    <div className="space-y-4 border-t border-border pt-4 mt-4">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-muted-foreground">
+                          Edit selected segment
+                        </Label>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => {
+                              updateTextSegment(selectedTextSegment, {
+                                style: {
+                                  fontFamily: style.fontFamily,
+                                  fontSize: style.fontSize,
+                                  fontWeight: style.fontWeight,
+                                  textColor: style.textColor,
+                                  backgroundColor: style.backgroundColor,
+                                  backgroundOpacity: style.backgroundOpacity,
+                                  position: style.position,
+                                  positionY: style.positionY,
+                                  animation: style.animation,
+                                },
+                              });
+                            }}
+                          >
+                            Copy from subtitles
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-6"
+                            onClick={() => {
+                              setCustomTextSegments((prev) =>
+                                prev.filter((s) => s.id !== selectedTextSegment)
+                              );
+                              setSelectedTextSegment(null);
+                            }}
+                          >
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatTime(seg.startFrame)} - {formatTime(seg.endFrame)}
+                        {" · "}
+                        Drag on timeline to change
+                      </div>
+                      <textarea
+                        value={seg.text}
+                        onChange={(e) =>
+                          updateTextSegment(selectedTextSegment, {
+                            text: e.target.value,
+                          })
+                        }
+                        rows={3}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        placeholder="Enter your text"
+                      />
+                      <Tabs defaultValue="font" className="w-full">
+                        <TabsList className="grid w-full grid-cols-4 h-9 mb-3">
+                          <TabsTrigger value="font">
+                            <Type className="size-4" />
+                          </TabsTrigger>
+                          <TabsTrigger value="colors">
+                            <Highlighter className="size-4" />
+                          </TabsTrigger>
+                          <TabsTrigger value="position">
+                            <SquareCenterlineDashedVerticalIcon className="size-4" />
+                          </TabsTrigger>
+                          <TabsTrigger value="animation">
+                            <WandSparkles className="size-4" />
+                          </TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="font" className="mt-0 space-y-3">
+                          <div>
+                            <Label className="text-xs">Font</Label>
+                            <Select
+                              value={seg.style.fontFamily}
+                              onValueChange={(v) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { fontFamily: v },
+                                })
+                              }
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={SYSTEM_FONT}>
+                                  System
+                                </SelectItem>
+                                {FONTS_LIST.map((f) => (
+                                  <SelectItem
+                                    key={f.family}
+                                    value={f.family}
+                                    style={{ fontFamily: f.family }}
+                                  >
+                                    {getFontDisplayName(f.family)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <Label className="text-xs">Size</Label>
+                              <Input
+                                type="number"
+                                value={seg.style.fontSize}
+                                onChange={(e) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      fontSize:
+                                        parseInt(e.target.value, 10) || 60,
+                                    },
+                                  })
+                                }
+                                className="mt-1"
+                                min={12}
+                                max={120}
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <Label className="text-xs">Weight</Label>
+                              <Select
+                                value={String(seg.style.fontWeight)}
+                                onValueChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      fontWeight: parseInt(v, 10),
+                                    },
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="mt-1">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {[400, 500, 600, 700, 800, 900].map((w) => (
+                                    <SelectItem
+                                      key={w}
+                                      value={String(w)}
+                                    >
+                                      {w}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="colors" className="mt-0 space-y-3">
+                          <div>
+                            <Label className="text-xs">Text color</Label>
+                            <div className="mt-1">
+                              <ColorPickerInput
+                                value={seg.style.textColor}
+                                onChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { textColor: v },
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Background</Label>
+                            <div className="flex gap-2 mt-1">
+                              <ColorPickerInput
+                                value={seg.style.backgroundColor}
+                                onChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { backgroundColor: v },
+                                  })
+                                }
+                              />
+                              <div className="flex-1">
+                                <Slider
+                                  value={[seg.style.backgroundOpacity * 100]}
+                                  onValueChange={([v]) =>
+                                    updateTextSegment(selectedTextSegment, {
+                                      style: {
+                                        backgroundOpacity: v / 100,
+                                      },
+                                    })
+                                  }
+                                  min={0}
+                                  max={100}
+                                  step={5}
+                                />
+                                <span className="text-[10px] text-muted-foreground">
+                                  {Math.round(seg.style.backgroundOpacity * 100)}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="position" className="mt-0 space-y-3">
+                          <div>
+                            <Label className="text-xs">Position</Label>
+                            <Select
+                              value={seg.style.position}
+                              onValueChange={(v) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: {
+                                    position: v as "top" | "center" | "bottom",
+                                    positionY:
+                                      v === "top"
+                                        ? 20
+                                        : v === "center"
+                                          ? 50
+                                          : 85,
+                                  },
+                                })
+                              }
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="top">Top</SelectItem>
+                                <SelectItem value="center">Center</SelectItem>
+                                <SelectItem value="bottom">Bottom</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-xs">
+                              Vertical offset ({seg.style.positionY ?? 50}%)
+                            </Label>
+                            <Slider
+                              value={[seg.style.positionY ?? 50]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { positionY: v },
+                                })
+                              }
+                              min={5}
+                              max={95}
+                              step={1}
+                              className="mt-1"
+                            />
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="animation" className="mt-0 space-y-3">
+                          <div>
+                            <Label className="text-xs">Animation</Label>
+                            <Select
+                              value={seg.style.animation}
+                              onValueChange={(v) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: {
+                                    animation: v as
+                                      | "none"
+                                      | "fade"
+                                      | "pop"
+                                      | "slide"
+                                      | "typewriter",
+                                  },
+                                })
+                              }
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                <SelectItem value="fade">Fade</SelectItem>
+                                <SelectItem value="pop">Pop</SelectItem>
+                                <SelectItem value="slide">Slide</SelectItem>
+                                <SelectItem value="typewriter">
+                                  Typewriter
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </TabsContent>
+                      </Tabs>
+                    </div>
+                  );
+                })()}
+
+                {!selectedTextSegment && customTextSegments.length > 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Click a segment above or on the timeline to edit
+                  </p>
+                )}
+              </TabsContent>
             </div>
           </Tabs>
 
@@ -2390,59 +3046,136 @@ export default function EditorPage() {
                 highlightColor,
                 videoTransform,
                 videoAspectRatio,
+                customTextSegments,
+                customTextTracks,
               }}
               durationInFrames={compositionDuration}
               fps={FPS}
               compositionWidth={1080}
               compositionHeight={1920}
               style={{ width: "100%", height: "100%" }}
-              controls
               loop
             />
           </div>
-          {/* Crop controls - between player and timeline */}
-          <div className="flex items-center justify-center pb-4">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={() => setShowCropDialog(true)}
-              disabled={!videoUrl}
-            >
-              <Crop className="h-4 w-4" />
-            </Button>
-          </div>
           <VideoCropDialog
             open={showCropDialog}
-            onOpenChange={setShowCropDialog}
-            videoUrl={videoUrl}
-            currentTransform={videoTransform}
-            onApply={setVideoTransform}
+            onOpenChange={(open) => {
+              setShowCropDialog(open);
+              if (!open) setCropDialogClip(null);
+            }}
+            videoUrl={cropDialogClip?.url ?? videoUrl}
+            currentTransform={
+              cropDialogClip?.segmentId
+                ? (videoSegments.find(
+                    (s) => s.id === cropDialogClip.segmentId
+                  )?.transform ?? videoTransform)
+                : videoTransform
+            }
+            onApply={(transform) => {
+              if (cropDialogClip?.segmentId) {
+                setVideoSegments((prev) =>
+                  prev.map((s) =>
+                    s.id === cropDialogClip.segmentId
+                      ? { ...s, transform }
+                      : s
+                  )
+                );
+              } else {
+                setVideoTransform(transform);
+              }
+            }}
             compositionWidth={1080}
             compositionHeight={1920}
             initialVideoAspectRatio={videoAspectRatio}
             onVideoDimensionsLoaded={(w, h) =>
               setVideoAspectRatio(h > 0 ? w / h : 16 / 9)
             }
+            trimStartSeconds={cropDialogClip?.trimStartSeconds ?? 0}
+            trimEndSeconds={cropDialogClip?.trimEndSeconds}
           />
           <Timeline
             subtitles={subtitles}
             setSubtitles={setSubtitles}
             selectedSubtitle={selectedSubtitle}
-            setSelectedSubtitle={setSelectedSubtitle}
+            setSelectedSubtitle={(id) => {
+              setSelectedSubtitle(id);
+              setSelectedVideoSegment(null);
+              setSelectedTextSegment(null);
+              if (id) {
+                setLeftPanelCollapsed(false);
+                setLeftPanelTab("subtitles");
+              }
+            }}
             videoSegments={videoSegments}
             setVideoSegments={setVideoSegments}
             deletedRanges={deletedRanges}
             setDeletedRanges={setDeletedRanges}
             selectedVideoSegment={selectedVideoSegment}
-            setSelectedVideoSegment={setSelectedVideoSegment}
+            setSelectedVideoSegment={(id) => {
+              setSelectedVideoSegment(id);
+              setSelectedSubtitle(null);
+              setSelectedTextSegment(null);
+            }}
             playerRef={playerRef}
             videoDuration={compositionDuration}
             fps={FPS}
             videoUrl={videoUrl}
             onSeek={handleSeek}
             onDeleteRequest={handleDeleteRequest}
+            onDeleteTextSegment={(id) => {
+              setCustomTextSegments((prev) => prev.filter((s) => s.id !== id));
+              setSelectedTextSegment(null);
+            }}
+            onCropClick={() => {
+              if (!videoUrl) return;
+              if (videoSegments.length > 0) {
+                const seg = selectedVideoSegment
+                  ? videoSegments.find((s) => s.id === selectedVideoSegment)
+                  : null;
+                if (!seg) return;
+                setCropDialogClip({
+                  url: seg.sourceVideoUrl,
+                  trimStartSeconds: seg.sourceStartFrame / FPS,
+                  trimEndSeconds: seg.sourceEndFrame / FPS,
+                  segmentId: seg.id,
+                });
+              } else {
+                setCropDialogClip({
+                  url: videoUrl,
+                  trimStartSeconds: 0,
+                  trimEndSeconds: undefined,
+                });
+              }
+              setShowCropDialog(true);
+            }}
+            onAddTextTrackClick={() => {
+              setLeftPanelCollapsed(false);
+              setLeftPanelTab("text");
+            }}
             setRawSegmentSubtitles={setRawSegmentSubtitles}
             setWordSubtitles={setWordSubtitles}
+            customTextTracks={customTextTracks}
+            setCustomTextTracks={setCustomTextTracks}
+            customTextSegments={customTextSegments}
+            setCustomTextSegments={setCustomTextSegments}
+            selectedTextSegment={selectedTextSegment}
+            setSelectedTextSegment={(id) => {
+              setSelectedTextSegment(id);
+              setSelectedSubtitle(null);
+              setSelectedVideoSegment(null);
+              if (id) {
+                setLeftPanelCollapsed(false);
+                setLeftPanelTab("text");
+                const seg = customTextSegments.find((s) => s.id === id);
+                if (seg) {
+                  setCollapsedTextTrackIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(seg.trackId);
+                    return next;
+                  });
+                }
+              }
+            }}
           />
           <DeletionDialog
             open={showDeleteDialog}

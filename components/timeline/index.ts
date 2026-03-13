@@ -3,6 +3,8 @@ export { TimelineRuler } from "./TimelineRuler";
 export { VideoTrack } from "./VideoTrack";
 export { SubtitleTrack } from "./SubtitleTrack";
 export { SubtitleSegment } from "./SubtitleSegment";
+export { CustomTextTrack } from "./CustomTextTrack";
+export { CustomTextSegment } from "./CustomTextSegment";
 export { ZoomControls } from "./ZoomControls";
 export { DeletionDialog, getStoredDeletePreference } from "./DeletionDialog";
 export * from "./types";

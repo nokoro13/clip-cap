@@ -10,6 +10,11 @@ import {
   useDelayRender,
 } from 'remotion';
 import { FONTS_LIST, isGoogleFont } from '@/lib/google-fonts-list';
+import type {
+  CustomTextSegment,
+  CustomTextStyle,
+  CustomTextTrack,
+} from '@/components/timeline/types';
 
 // ============ STYLE TYPES ============
 
@@ -153,6 +158,7 @@ export type VideoSegment = {
   sourceStartFrame: number;
   sourceEndFrame: number;
   sourceVideoUrl: string;
+  transform?: VideoTransform;
 };
 
 export type EnhancedSubtitle = Subtitle & {
@@ -170,6 +176,10 @@ export type SubtitleCompositionProps = {
   highlightColor?: string; // Color for highlighted words
   videoTransform?: VideoTransform; // Pan/zoom for 16:9 or 9:16 video in 9:16 canvas
   videoAspectRatio?: number; // width/height. 9/16 for portrait, 16/9 for landscape
+  /** Custom text overlay segments (from text tracks) */
+  customTextSegments?: CustomTextSegment[];
+  /** Custom text tracks (for visibility filtering) */
+  customTextTracks?: CustomTextTrack[];
 };
 
 // ============ POSITION HELPER ============
@@ -205,6 +215,40 @@ function getSubtitlePositionStyles(
 
 /** True when the outer div handles scale (positionY or center). */
 function isPositionWithOuterScale(style: SubtitleStyle): boolean {
+  return style.positionY != null || style.position === 'center';
+}
+
+/** Position styles for custom text overlay (uses CustomTextStyle) */
+function getCustomTextPositionStyles(
+  style: CustomTextStyle,
+  scale: number
+): React.CSSProperties {
+  const marginX = style.containerMarginX ?? 40;
+  const base: React.CSSProperties = {
+    position: 'absolute',
+    left: 0,
+    right: 0,
+    textAlign: 'center',
+    padding: `0 ${marginX}px`,
+  };
+  const positionY = style.positionY ?? null;
+  if (positionY != null) {
+    base.top = `${positionY}%`;
+    base.transform = `translateY(-50%) scale(${scale})`;
+    return base;
+  }
+  if (style.position === 'top') {
+    base.top = 80;
+  } else if (style.position === 'center') {
+    base.top = '50%';
+    base.transform = `translateY(-50%) scale(${scale})`;
+  } else {
+    base.bottom = 80;
+  }
+  return base;
+}
+
+function isCustomTextPositionWithOuterScale(style: CustomTextStyle): boolean {
   return style.positionY != null || style.position === 'center';
 }
 
@@ -333,11 +377,10 @@ const HighlightedSubtitleDisplay: React.FC<{
               style={{
                 color: isActive ? highlightColor : style.textColor,
                 transition: 'color 0.1s ease-out',
-                transform: isActive ? 'scale(1.05)' : 'scale(1)',
                 display: 'inline-block',
               }}
             >
-              {word.text}
+              {word.text.trim()}
               {index < words.length - 1 ? ' ' : ''}
             </span>
           );
@@ -465,25 +508,25 @@ const BackgroundHighlightedSubtitleDisplay: React.FC<{
         {words.map((word, index) => {
           const isActive = currentMs >= word.startMs && currentMs < word.endMs;
           return (
-            <span
-              key={`${word.text}-${index}`}
-              style={{
-                color: style.textColor,
-                transition: 'background-color 0.1s ease-out',
-                display: 'inline-block',
-                ...(isActive
-                  ? {
-                      backgroundColor: highlightColor,
-                      borderRadius: 4,
-                      padding: '2px 6px',
-                      margin: '0 1px',
-                    }
-                  : {}),
-              }}
-            >
-              {word.text}
-              {index < words.length - 1 ? ' ' : ''}
-            </span>
+            <React.Fragment key={`${word.text}-${index}`}>
+              <span
+                style={{
+                  color: style.textColor,
+                  transition: 'background-color 0.1s ease-out',
+                  display: 'inline',
+                  ...(isActive
+                    ? {
+                        backgroundColor: highlightColor,
+                        borderRadius: 4,
+                        padding: '2px 6px',
+                      }
+                    : {}),
+                }}
+              >
+                {word.text.trim()}
+              </span>
+              {index < words.length - 1 ? ' ' : null}
+            </React.Fragment>
           );
         })}
       </span>
@@ -609,6 +652,123 @@ const SubtitleDisplay: React.FC<{ text: string; style: SubtitleStyle }> = ({
   );
 };
 
+// ============ CUSTOM TEXT OVERLAY ============
+
+const CustomTextOverlay: React.FC<{
+  text: string;
+  style: CustomTextStyle;
+}> = ({ text, style }) => {
+  const frame = useCurrentFrame();
+  const { fps } = useVideoConfig();
+
+  let opacity = 1;
+  let scale = 1;
+  let translateY = 0;
+  let displayText = text;
+
+  const animationFrames = Math.min(fps * 0.2, 6);
+
+  switch (style.animation) {
+    case 'fade':
+      opacity = interpolate(frame, [0, animationFrames], [0, 1], {
+        extrapolateRight: 'clamp',
+      });
+      break;
+    case 'pop':
+      opacity = interpolate(frame, [0, animationFrames], [0, 1], {
+        extrapolateRight: 'clamp',
+      });
+      scale = interpolate(frame, [0, animationFrames], [0.5, 1], {
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.back(1.5)),
+      });
+      break;
+    case 'slide':
+      opacity = interpolate(frame, [0, animationFrames], [0, 1], {
+        extrapolateRight: 'clamp',
+      });
+      translateY = interpolate(frame, [0, animationFrames], [30, 0], {
+        extrapolateRight: 'clamp',
+        easing: Easing.out(Easing.cubic),
+      });
+      break;
+    case 'typewriter':
+      const charsToShow = Math.floor(
+        interpolate(frame, [0, fps * 0.5], [0, text.length], {
+          extrapolateRight: 'clamp',
+        })
+      );
+      displayText = text.slice(0, charsToShow);
+      break;
+  }
+
+  const positionStyles = getCustomTextPositionStyles(style, scale);
+
+  const textShadows: string[] = [];
+  if (style.strokeWidth > 0) {
+    const sw = style.strokeWidth;
+    const sc = style.strokeColor;
+    textShadows.push(
+      `${sw}px 0 0 ${sc}`,
+      `-${sw}px 0 0 ${sc}`,
+      `0 ${sw}px 0 ${sc}`,
+      `0 -${sw}px 0 ${sc}`,
+      `${sw}px ${sw}px 0 ${sc}`,
+      `-${sw}px ${sw}px 0 ${sc}`,
+      `${sw}px -${sw}px 0 ${sc}`,
+      `-${sw}px -${sw}px 0 ${sc}`
+    );
+  }
+  const shadowOpacity = style.shadowOpacity ?? 1;
+  if (style.shadowBlur > 0 && shadowOpacity > 0) {
+    textShadows.push(
+      `${style.shadowOffsetX}px ${style.shadowOffsetY}px ${style.shadowBlur}px ${hexToRgba(style.shadowColor, shadowOpacity)}`
+    );
+  }
+
+  const bgColor = style.backgroundColor;
+  const bgOpacity = style.backgroundOpacity;
+  let backgroundColor = 'transparent';
+  if (bgOpacity > 0 && bgColor !== 'transparent') {
+    const hex = bgColor.replace('#', '');
+    const r = parseInt(hex.substring(0, 2), 16);
+    const g = parseInt(hex.substring(2, 4), 16);
+    const b = parseInt(hex.substring(4, 6), 16);
+    backgroundColor = `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
+  }
+
+  return (
+    <div style={positionStyles}>
+      <span
+        style={{
+          display: 'inline-block',
+          maxWidth: '100%',
+          opacity,
+          transform: !isCustomTextPositionWithOuterScale(style)
+            ? `scale(${scale}) translateY(${translateY}px)`
+            : translateY !== 0
+              ? `translateY(${translateY}px)`
+              : undefined,
+          color: style.textColor,
+          fontSize: style.fontSize,
+          fontWeight: style.fontWeight,
+          fontFamily: `${style.fontFamily}, system-ui, sans-serif`,
+          fontStyle: style.fontStyle ?? 'normal',
+          lineHeight: style.lineHeight ?? 1.2,
+          textShadow: textShadows.length > 0 ? textShadows.join(', ') : 'none',
+          backgroundColor,
+          padding: `${style.paddingY}px ${style.paddingX}px`,
+          borderRadius: style.borderRadius,
+          whiteSpace: 'pre-wrap',
+          textTransform: style.uppercase ? 'uppercase' : undefined,
+        }}
+      >
+        {displayText}
+      </span>
+    </div>
+  );
+};
+
 // ============ GOOGLE FONT LOADER ============
 // Loads the selected Google Font during render so preview and export use it.
 
@@ -680,17 +840,17 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
   highlightColor = '#facc15', // Yellow by default
   videoTransform,
   videoAspectRatio = 16 / 9,
+  customTextSegments = [],
+  customTextTracks = [],
 }) => {
   const { fps } = useVideoConfig();
   const videoStartFrame = Math.round((videoStartFrom / 1000) * fps);
 
   const isPortrait = videoAspectRatio < 0.7;
 
-  const hasCustomTransform =
-    videoTransform &&
-    (videoTransform.scale !== 1 ||
-      videoTransform.offsetX !== 0 ||
-      videoTransform.offsetY !== 0);
+  const hasCustomTransform = (t: VideoTransform | undefined) =>
+    t &&
+    (t.scale !== 1 || t.offsetX !== 0 || t.offsetY !== 0);
 
   // Cover math: 16:9 -> fill height; 9:16 -> fill width. Output canvas is always 9:16.
   const COMPOSITION_WIDTH = 1080;
@@ -704,19 +864,27 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
       ? COMPOSITION_HEIGHT
       : COMPOSITION_WIDTH / videoAspectRatio;
 
-  const videoWrapperStyle = hasCustomTransform && videoTransform
-    ? {
-        position: 'absolute' as const,
-        left: '50%',
-        top: '50%',
-        width: coverWidth * videoTransform.scale,
-        height: coverHeight * videoTransform.scale,
-        transform: `translate(calc(-50% + ${videoTransform.offsetX}px), calc(-50% + ${videoTransform.offsetY}px))`,
-      }
-    : null;
+  const getVideoWrapperStyle = (t: VideoTransform) =>
+    hasCustomTransform(t)
+      ? {
+          position: 'absolute' as const,
+          left: '50%',
+          top: '50%',
+          width: coverWidth * t.scale,
+          height: coverHeight * t.scale,
+          transform: `translate(calc(-50% + ${t.offsetX}px), calc(-50% + ${t.offsetY}px))`,
+        }
+      : null;
+
+  // For single-video mode (no segments): use global videoTransform
+  const globalHasTransform = hasCustomTransform(videoTransform);
+  const globalVideoWrapperStyle =
+    globalHasTransform && videoTransform
+      ? getVideoWrapperStyle(videoTransform)
+      : null;
 
   const videoStyle: React.CSSProperties =
-    isPortrait || hasCustomTransform
+    isPortrait || globalHasTransform
       ? { width: '100%', height: '100%', objectFit: 'cover' }
       : { width: '100%', height: '100%', objectFit: 'contain' };
 
@@ -726,31 +894,49 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
 
   const useVideoSegments = videoSegments.length > 0;
 
+  const visibleTrackIds = new Set(
+    customTextTracks.filter((t) => t.visible).map((t) => t.id)
+  );
+  const visibleCustomTextSegments = customTextSegments.filter(
+    (s) => visibleTrackIds.has(s.trackId) && s.endFrame > s.startFrame
+  );
+
   return (
     <GoogleFontLoader style={style}>
       <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
         {useVideoSegments ? (
           videoSegments.map((segment) => {
             const durationFrames = segment.endFrame - segment.startFrame;
-            const VideoContent = hasCustomTransform && videoWrapperStyle ? (
-              <div style={videoWrapperStyle}>
+            const segTransform = segment.transform ?? videoTransform;
+            const segHasTransform = hasCustomTransform(segTransform);
+            const segWrapperStyle =
+              segHasTransform && segTransform
+                ? getVideoWrapperStyle(segTransform)
+                : null;
+            const segVideoStyle: React.CSSProperties =
+              isPortrait || segHasTransform
+                ? { width: '100%', height: '100%', objectFit: 'cover' }
+                : { width: '100%', height: '100%', objectFit: 'contain' };
+            const VideoContent =
+              segHasTransform && segWrapperStyle ? (
+                <div style={segWrapperStyle}>
+                  <OffthreadVideo
+                    src={segment.sourceVideoUrl}
+                    trimBefore={segment.sourceStartFrame}
+                    trimAfter={segment.sourceEndFrame}
+                    style={segVideoStyle}
+                    pauseWhenBuffering
+                  />
+                </div>
+              ) : (
                 <OffthreadVideo
                   src={segment.sourceVideoUrl}
                   trimBefore={segment.sourceStartFrame}
                   trimAfter={segment.sourceEndFrame}
-                  style={videoStyle}
+                  style={segVideoStyle}
                   pauseWhenBuffering
                 />
-              </div>
-            ) : (
-              <OffthreadVideo
-                src={segment.sourceVideoUrl}
-                trimBefore={segment.sourceStartFrame}
-                trimAfter={segment.sourceEndFrame}
-                style={videoStyle}
-                pauseWhenBuffering
-              />
-            );
+              );
             return (
               <Sequence
                 key={segment.id}
@@ -763,8 +949,8 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
             );
           })
         ) : videoUrl ? (
-          hasCustomTransform && videoWrapperStyle ? (
-            <div style={videoWrapperStyle}>
+          globalHasTransform && globalVideoWrapperStyle ? (
+            <div style={globalVideoWrapperStyle}>
               <OffthreadVideo
                 src={videoUrl}
                 startFrom={videoStartFrame}
@@ -821,6 +1007,16 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
               )}
             </Sequence>
           ))}
+
+        {visibleCustomTextSegments.map((seg) => (
+          <Sequence
+            key={seg.id}
+            from={seg.startFrame}
+            durationInFrames={Math.max(1, seg.endFrame - seg.startFrame)}
+          >
+            <CustomTextOverlay text={seg.text} style={seg.style} />
+          </Sequence>
+        ))}
       </AbsoluteFill>
     </GoogleFontLoader>
   );

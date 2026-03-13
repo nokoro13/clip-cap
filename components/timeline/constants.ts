@@ -24,6 +24,15 @@ export const SUBTITLE_COLORS = [
   "#06b6d4",
 ];
 
+// Colors for custom text tracks
+export const TEXT_TRACK_COLORS = [
+  "#10b981",
+  "#3b82f6",
+  "#f59e0b",
+  "#ef4444",
+  "#8b5cf6",
+];
+
 // Colors for video segments
 export const VIDEO_SEGMENT_COLORS = [
   "#1e40af",
