@@ -23,6 +23,15 @@ export default async function ExperiencePage({
 
 	const displayName = user.name || `@${user.username}`;
 
+	const accessPassId = process.env.NEXT_PUBLIC_WHOP_PREMIUM_PRODUCT_ID;
+	if (!accessPassId) {
+		throw new Error("NEXT_PUBLIC_WHOP_PREMIUM_PRODUCT_ID is not set");
+	}
+
+	const productAccess = await whopsdk.users.checkAccess(accessPassId, { id: userId });
+
+	console.log(productAccess);
+
 	return (
 		<div className="flex flex-col p-8 gap-6">
 			<div className="flex justify-between items-center gap-4">
@@ -32,6 +41,11 @@ export default async function ExperiencePage({
 				</h1>
 			</div>
 
+			{productAccess.has_access ? (
+				<p className="text-3 text-green-10">You have access to the premium features.</p>
+			) : (
+				<p className="text-3 text-red-10">You do not have access to the premium features.</p>
+			)}
 			<p className="text-3 text-gray-10">
 				Upload a video to generate AI-powered subtitles, or bulk process multiple videos at once.
 			</p>
