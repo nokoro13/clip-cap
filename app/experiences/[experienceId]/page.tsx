@@ -38,7 +38,7 @@ export default async function ExperiencePage({
 
 			<QuickStartCards />
 			<RecentProjectsGallery experienceId={experienceId} />
-{/* 
+
 			<h3 className="text-6 font-bold">Experience data</h3>
 			<JsonViewer data={experience} />
 
@@ -46,7 +46,7 @@ export default async function ExperiencePage({
 			<JsonViewer data={user} />
 
 			<h3 className="text-6 font-bold">Access data</h3>
-			<JsonViewer data={access} /> */}
+			<JsonViewer data={access} />
 		</div>
 	);
 }
