@@ -1,7 +1,6 @@
 "use client";
 
 import React, { useCallback } from "react";
-import { Slider } from "@/components/ui/slider";
 import { Button } from "@/components/ui/button";
 import { ZoomIn, ZoomOut, Maximize2 } from "lucide-react";
 import { MIN_ZOOM, MAX_ZOOM } from "./constants";
@@ -47,16 +46,6 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
         <ZoomOut className="h-4 w-4" />
       </Button>
 
-      <div className="w-24">
-        <Slider
-          value={[zoom]}
-          onValueChange={([v]) => onZoomChange(v)}
-          min={MIN_ZOOM}
-          max={MAX_ZOOM}
-          step={5}
-        />
-      </div>
-
       <Button
         variant="ghost"
         size="icon"
@@ -76,10 +65,6 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
       >
         <Maximize2 className="h-4 w-4" />
       </Button>
-
-      <span className="text-xs text-muted-foreground ml-2">
-        {Math.round((zoom / MAX_ZOOM) * 100)}%
-      </span>
     </div>
   );
 };

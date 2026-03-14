@@ -3,7 +3,7 @@
 import { Player, PlayerRef } from "@remotion/player";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useParams } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award } from "lucide-react";
 import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
@@ -27,6 +27,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover";
 import { ColorPickerInput } from "@/components/color-picker-input";
 import { cn } from "@/lib/utils";
 import { getVideoBlobUrl } from "@/lib/video-storage";
@@ -45,10 +50,18 @@ import {
   type DeletedRange,
   type EnhancedSubtitle,
   TEXT_TRACK_COLORS,
+  BANNER_TRACK_COLORS,
   DeletionDialog,
   getStoredDeletePreference,
 } from "@/components/timeline";
-import type { CustomTextTrack, CustomTextSegment, CustomTextStyle } from "@/components/timeline/types";
+import type {
+  CustomTextTrack,
+  CustomTextSegment,
+  CustomTextStyle,
+  BannerTrack,
+  BannerSegment,
+  BannerStyle,
+} from "@/components/timeline/types";
 import {
   createInitialVideoSegment,
   applyDeletedRangesToSubtitles,
@@ -83,6 +96,38 @@ const DEFAULT_CUSTOM_TEXT_STYLE: CustomTextStyle = {
   paddingY: 16,
   containerMarginX: 40,
   uppercase: false,
+};
+
+const DEFAULT_BANNER_STYLE: BannerStyle = {
+  layout: "horizontal",
+  logoPosition: "left",
+  spacing: 16,
+  logoWidth: 80,
+  logoHeight: 80,
+  logoScale: 1.0,
+  logoOpacity: 1.0,
+  logoBorderRadius: 8,
+  fontFamily: "Poppins",
+  fontSize: 36,
+  fontWeight: 700,
+  fontStyle: "normal",
+  textColor: "#ffffff",
+  textTransform: "none",
+  backgroundColor: "#000000",
+  backgroundOpacity: 0.8,
+  borderRadius: 12,
+  paddingX: 20,
+  paddingY: 16,
+  shadowColor: "#000000",
+  shadowBlur: 16,
+  shadowOpacity: 0.5,
+  shadowOffsetX: 0,
+  shadowOffsetY: 4,
+  position: "bottom-center",
+  positionY: 90,
+  marginX: 0,
+  marginY: 0,
+  animation: "slide-up",
 };
 
 const SUBTITLE_COLORS = [
@@ -479,6 +524,166 @@ const PRESET_STYLES: {
   },
 ];
 
+/** Default platform logos from Simple Icons CDN (SVG, free to use) */
+const PLATFORM_LOGO_URLS = {
+  instagram: "https://cdn.simpleicons.org/instagram/ffffff",
+  youtube: "https://cdn.simpleicons.org/youtube/ffffff",
+  twitch: "https://cdn.simpleicons.org/twitch/ffffff",
+  kick: "https://cdn.simpleicons.org/kick/ffffff",
+} as const;
+
+const BANNER_PRESETS: {
+  id: string;
+  name: string;
+  logoUrl: string;
+  style: BannerStyle;
+}[] = [
+  {
+    id: "instagram",
+    name: "Instagram",
+    logoUrl: PLATFORM_LOGO_URLS.instagram,
+    style: {
+      layout: "horizontal",
+      logoPosition: "left",
+      spacing: 16,
+      logoWidth: 80,
+      logoHeight: 80,
+      logoScale: 1.0,
+      logoOpacity: 1.0,
+      logoBorderRadius: 8,
+      fontFamily: "Poppins",
+      fontSize: 36,
+      fontWeight: 700,
+      fontStyle: "normal",
+      textColor: "#ffffff",
+      textTransform: "uppercase",
+      backgroundColor: "#E1306C",
+      backgroundOpacity: 0.9,
+      borderRadius: 0,
+      paddingX: 24,
+      paddingY: 16,
+      shadowColor: "#000000",
+      shadowBlur: 16,
+      shadowOpacity: 0.5,
+      shadowOffsetX: 0,
+      shadowOffsetY: 4,
+      position: "bottom-center",
+      positionY: 90,
+      marginX: 0,
+      marginY: 0,
+      animation: "slide-up",
+    },
+  },
+  {
+    id: "youtube",
+    name: "YouTube",
+    logoUrl: PLATFORM_LOGO_URLS.youtube,
+    style: {
+      layout: "horizontal",
+      logoPosition: "left",
+      spacing: 16,
+      logoWidth: 80,
+      logoHeight: 80,
+      logoScale: 1.0,
+      logoOpacity: 1.0,
+      logoBorderRadius: 8,
+      fontFamily: "Poppins",
+      fontSize: 36,
+      fontWeight: 700,
+      fontStyle: "normal",
+      textColor: "#ffffff",
+      textTransform: "uppercase",
+      backgroundColor: "#000000",
+      backgroundOpacity: 0.85,
+      borderRadius: 0,
+      paddingX: 24,
+      paddingY: 16,
+      shadowColor: "#000000",
+      shadowBlur: 16,
+      shadowOpacity: 0.5,
+      shadowOffsetX: 0,
+      shadowOffsetY: 4,
+      position: "bottom-center",
+      positionY: 90,
+      marginX: 0,
+      marginY: 0,
+      animation: "slide-up",
+    },
+  },
+  {
+    id: "twitch",
+    name: "Twitch",
+    logoUrl: PLATFORM_LOGO_URLS.twitch,
+    style: {
+      layout: "horizontal",
+      logoPosition: "left",
+      spacing: 20,
+      logoWidth: 64,
+      logoHeight: 64,
+      logoScale: 1.0,
+      logoOpacity: 1.0,
+      logoBorderRadius: 8,
+      fontFamily: "Poppins",
+      fontSize: 24,
+      fontWeight: 800,
+      fontStyle: "normal",
+      textColor: "#ffffff",
+      textTransform: "uppercase",
+      backgroundColor: "#9146ff",
+      backgroundOpacity: 0.9,
+      borderRadius: 0,
+      paddingX: 28,
+      paddingY: 18,
+      shadowColor: "#000000",
+      shadowBlur: 20,
+      shadowOpacity: 0.6,
+      shadowOffsetX: 0,
+      shadowOffsetY: 6,
+      position: "bottom-center",
+      positionY: 88,
+      marginX: 0,
+      marginY: 0,
+      animation: "slide-up",
+    },
+  },
+  {
+    id: "kick",
+    name: "Kick",
+    logoUrl: PLATFORM_LOGO_URLS.kick,
+    style: {
+      layout: "horizontal",
+      logoPosition: "left",
+      spacing: 20,
+      logoWidth: 80,
+      logoHeight: 80,
+      logoScale: 1.0,
+      logoOpacity: 1.0,
+      logoBorderRadius: 8,
+      fontFamily: "Poppins",
+      fontSize: 36,
+      fontWeight: 800,
+      fontStyle: "normal",
+      textColor: "#000000",
+      textTransform: "uppercase",
+      backgroundColor: "#53FC19",
+      backgroundOpacity: 0.95,
+      borderRadius: 0,
+      paddingX: 28,
+      paddingY: 18,
+      shadowColor: "#000000",
+      shadowBlur: 16,
+      shadowOpacity: 0.5,
+      shadowOffsetX: 0,
+      shadowOffsetY: 4,
+      position: "bottom-center",
+      positionY: 90,
+      marginX: 0,
+      marginY: 0,
+      animation: "slide-up",
+    },
+  },
+];
+
 function msToFrame(ms: number, fps: number): number {
   return Math.round((ms / 1000) * fps);
 }
@@ -680,7 +885,7 @@ export default function EditorPage() {
   const [availableWeights, setAvailableWeights] = useState<number[]>([
     400, 700,
   ]);
-  const [leftPanelWidth, setLeftPanelWidth] = useState(420);
+  const [leftPanelWidth, setLeftPanelWidth] = useState(334);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
   const [resizingPanel, setResizingPanel] = useState(false);
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
@@ -718,8 +923,14 @@ export default function EditorPage() {
   const [customTextTracks, setCustomTextTracks] = useState<CustomTextTrack[]>([]);
   const [customTextSegments, setCustomTextSegments] = useState<CustomTextSegment[]>([]);
   const [selectedTextSegment, setSelectedTextSegment] = useState<string | null>(null);
-  const [leftPanelTab, setLeftPanelTab] = useState<"styling" | "subtitles" | "text">("styling");
+  const [bannerTracks, setBannerTracks] = useState<BannerTrack[]>([]);
+  const [bannerSegments, setBannerSegments] = useState<BannerSegment[]>([]);
+  const [selectedBannerSegment, setSelectedBannerSegment] = useState<string | null>(null);
+  const [leftPanelTab, setLeftPanelTab] = useState<"styling" | "subtitles" | "text" | "banners">("styling");
   const [collapsedTextTrackIds, setCollapsedTextTrackIds] = useState<Set<string>>(new Set());
+  const [collapsedBannerTrackIds, setCollapsedBannerTrackIds] = useState<Set<string>>(new Set());
+  const [bannerPresetPopoverTrackId, setBannerPresetPopoverTrackId] = useState<string | null>(null);
+  const [bannerEditorMoreOptionsOpen, setBannerEditorMoreOptionsOpen] = useState(false);
 
   // Load video and captions from URL params or localStorage
   useEffect(() => {
@@ -874,6 +1085,12 @@ export default function EditorPage() {
           if (project.customTextSegments && Array.isArray(project.customTextSegments)) {
             setCustomTextSegments(project.customTextSegments);
           }
+          if (project.bannerTracks && Array.isArray(project.bannerTracks)) {
+            setBannerTracks(project.bannerTracks);
+          }
+          if (project.bannerSegments && Array.isArray(project.bannerSegments)) {
+            setBannerSegments(project.bannerSegments);
+          }
         } catch (e) {
           console.error("Failed to parse stored project:", e);
         }
@@ -999,12 +1216,14 @@ export default function EditorPage() {
           deletedRanges,
           customTextTracks,
           customTextSegments,
+          bannerTracks,
+          bannerSegments,
         })
       );
     } catch {
       // ignore
     }
-  }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments]);
+  }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments]);
 
   // Load video dimensions when videoUrl changes so 9:16 is detected for crop
   useEffect(() => {
@@ -1260,7 +1479,7 @@ export default function EditorPage() {
     [selectedSubtitle]
   );
 
-  const MIN_LEFT_PANEL = 260;
+  const MIN_LEFT_PANEL = 334;
   const MAX_LEFT_PANEL = 560;
 
   const handleLeftPanelResizeStart = useCallback(
@@ -1476,6 +1695,16 @@ export default function EditorPage() {
             prev.filter((s) => s.id !== selectedTextSegment)
           );
           setSelectedTextSegment(null);
+        } else if (selectedBannerSegment) {
+          setBannerSegments((prev) =>
+            prev.filter((s) => s.id !== selectedBannerSegment)
+          );
+          setSelectedBannerSegment(null);
+        } else if (selectedVideoSegment) {
+          const deleteBtn = document.querySelector(
+            '[title="Delete selected (Delete key)"]'
+          );
+          (deleteBtn as HTMLButtonElement)?.click();
         }
         return;
       }
@@ -1502,7 +1731,17 @@ export default function EditorPage() {
 
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [selectedSubtitle, selectedTextSegment, handleDeleteRequest]);
+  }, [
+    selectedSubtitle,
+    selectedTextSegment,
+    selectedBannerSegment,
+    selectedVideoSegment,
+    handleDeleteRequest,
+    setCustomTextSegments,
+    setSelectedTextSegment,
+    setBannerSegments,
+    setSelectedBannerSegment,
+  ]);
 
   // Scroll selected subtitle/text segment card into view when selection changes from timeline
   useEffect(() => {
@@ -1583,9 +1822,9 @@ export default function EditorPage() {
             aria-label={leftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
             {leftPanelCollapsed ? (
-              <PanelLeft className="size-6" />
+              <PanelLeft className="size-4" />
             ) : (
-              <PanelLeftClose className="size-6" />
+              <PanelLeftClose className="size-4" />
             )}
           </Button>
 
@@ -1599,19 +1838,22 @@ export default function EditorPage() {
           >
             <TabsList variant="line" className="shrink-0 mt-4 gap-4">
               <TabsTrigger value="styling" className="border-none">
-                <Palette className="size-6" />
+                <Palette className="size-4" />
               </TabsTrigger>
               <TabsTrigger value="subtitles" className="border-none">
-                <Captions className="size-6" />
+                <Captions className="size-4" />
               </TabsTrigger>
               <TabsTrigger value="text" className="border-none">
-                <Type className="size-6" />
+                <Type className="size-4" />
+              </TabsTrigger>
+              <TabsTrigger value="banners" className="border-none">
+                <Award className="size-4" />
               </TabsTrigger>
             </TabsList>
             <div className="relative flex-1 flex min-h-0 flex-col">
               <TabsContent
                 value="styling"
-                className="mt-0 flex flex-1 flex-col outline-none p-4 gap-4"
+                className="mt-0 flex flex-1 min-h-0 flex-col outline-none p-4 gap-4"
               >
                 <Button
                   variant="outline"
@@ -1626,12 +1868,12 @@ export default function EditorPage() {
                     : "style"}
                 </Button>
                 {/* Presets + Customize button (visible when panel closed) */}
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 min-h-0 overflow-y-auto">
                   <div className="mb-4">
                     <Label className="mb-2 text-muted-foreground">
                       Style Presets
                     </Label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid md:grid-cols-2 grid-cols-1 gap-2">
                       {PRESET_STYLES.map((preset) => (
                         <Button
                           key={preset.id}
@@ -1690,7 +1932,7 @@ export default function EditorPage() {
                           className="grid w-full grid-cols-4 h-9 mb-3"
                         >
                           <TabsTrigger value="font" className="border-none" style={{ justifyContent: "center" }}>
-                            <Type className="size-6" />
+                            <Type className="size-4" />
                           </TabsTrigger>
                           <TabsTrigger
                             value="background"
@@ -1698,7 +1940,7 @@ export default function EditorPage() {
                             style={{ justifyContent: "center" }}
                           >
                             <Highlighter
-                              className="size-6"
+                              className="size-4"
                             />
                           </TabsTrigger>
                           <TabsTrigger
@@ -1707,11 +1949,11 @@ export default function EditorPage() {
                             style={{ justifyContent: "center" }}
                           >
                             <SquareCenterlineDashedVerticalIcon
-                              className="size-6"
+                              className="size-4"
                             />
                           </TabsTrigger>
                           <TabsTrigger value="effects" className="border-none" style={{ justifyContent: "center" }}>
-                            <WandSparkles className="size-6" />
+                            <WandSparkles className="size-4" />
                           </TabsTrigger>
                         </TabsList>
 
@@ -2395,7 +2637,7 @@ export default function EditorPage() {
                       className={cn(
                         "cursor-pointer rounded-lg border p-3 transition-colors hover:bg-secondary/80",
                         selectedSubtitle === sub.id
-                          ? "border-primary bg-primary/10"
+                          ? "border-primary bg-primary/30"
                           : "border-transparent bg-secondary"
                       )}
                     >
@@ -2466,9 +2708,6 @@ export default function EditorPage() {
                 <Label className="mb-2 text-muted-foreground">
                   Custom Text Overlays
                 </Label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Add overlay text (e.g. &quot;Wait till the end!&quot;) at specific times.
-                </p>
 
                 {/* Quick add when no tracks */}
                 {customTextTracks.length === 0 && (
@@ -2736,12 +2975,26 @@ export default function EditorPage() {
                                   fontFamily: style.fontFamily,
                                   fontSize: style.fontSize,
                                   fontWeight: style.fontWeight,
+                                  fontStyle: style.fontStyle,
+                                  lineHeight: style.lineHeight,
                                   textColor: style.textColor,
+                                  strokeColor: style.strokeColor,
+                                  strokeWidth: style.strokeWidth,
+                                  shadowColor: style.shadowColor,
+                                  shadowBlur: style.shadowBlur,
+                                  shadowOpacity: style.shadowOpacity,
+                                  shadowOffsetX: style.shadowOffsetX,
+                                  shadowOffsetY: style.shadowOffsetY,
                                   backgroundColor: style.backgroundColor,
                                   backgroundOpacity: style.backgroundOpacity,
+                                  borderRadius: style.borderRadius,
+                                  paddingX: style.paddingX,
+                                  paddingY: style.paddingY,
+                                  containerMarginX: style.containerMarginX,
                                   position: style.position,
                                   positionY: style.positionY,
                                   animation: style.animation,
+                                  uppercase: style.uppercase,
                                 },
                               });
                             }}
@@ -2871,6 +3124,57 @@ export default function EditorPage() {
                               </Select>
                             </div>
                           </div>
+                          <div className="flex gap-4">
+                            <div className="flex flex-col flex-1 justify-between gap-3">
+                              <div>
+                                <Label className="text-xs text-muted-foreground">
+                                  Italic
+                                </Label>
+                              </div>
+                              <Switch
+                                checked={seg.style.fontStyle === "italic"}
+                                onCheckedChange={(checked: boolean) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      fontStyle: checked ? "italic" : "normal",
+                                    },
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="flex flex-col flex-1 justify-between gap-3">
+                              <div>
+                                <Label className="text-xs text-muted-foreground">
+                                  Uppercase
+                                </Label>
+                              </div>
+                              <Switch
+                                checked={seg.style.uppercase ?? false}
+                                onCheckedChange={(checked: boolean) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { uppercase: checked },
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <Label className="text-xs">
+                              Line height ({seg.style.lineHeight ?? 1.2})
+                            </Label>
+                            <Slider
+                              value={[seg.style.lineHeight ?? 1.2]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { lineHeight: v },
+                                })
+                              }
+                              min={0.8}
+                              max={2.5}
+                              step={0.1}
+                              className="mt-1"
+                            />
+                          </div>
                         </TabsContent>
                         <TabsContent value="colors" className="mt-0 space-y-3">
                           <div>
@@ -2883,6 +3187,129 @@ export default function EditorPage() {
                                     style: { textColor: v },
                                   })
                                 }
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-4">
+                            <div className="space-y-1 flex-1">
+                              <Label className="text-xs">Stroke</Label>
+                              <ColorPickerInput
+                                value={seg.style.strokeColor}
+                                onChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { strokeColor: v },
+                                  })
+                                }
+                                className="mt-1"
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between">
+                                <Label className="text-xs">Stroke width</Label>
+                                <span className="text-xs text-muted-foreground">
+                                  {seg.style.strokeWidth}px
+                                </span>
+                              </div>
+                              <Slider
+                                value={[seg.style.strokeWidth]}
+                                onValueChange={([v]) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { strokeWidth: v },
+                                  })
+                                }
+                                min={0}
+                                max={6}
+                                step={1}
+                                className="mt-1"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-4">
+                            <div className="space-y-1 flex-1">
+                              <Label className="text-xs">Shadow color</Label>
+                              <ColorPickerInput
+                                value={seg.style.shadowColor}
+                                onChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { shadowColor: v },
+                                  })
+                                }
+                                className="mt-1"
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between">
+                                <Label className="text-xs">Shadow blur</Label>
+                                <span className="text-xs text-muted-foreground">
+                                  {seg.style.shadowBlur}px
+                                </span>
+                              </div>
+                              <Slider
+                                value={[seg.style.shadowBlur]}
+                                onValueChange={([v]) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { shadowBlur: v },
+                                  })
+                                }
+                                min={0}
+                                max={40}
+                                step={2}
+                                className="mt-1"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <Label className="text-xs">Shadow opacity</Label>
+                              <span className="text-xs text-muted-foreground">
+                                {Math.round((seg.style.shadowOpacity ?? 1) * 100)}%
+                              </span>
+                            </div>
+                            <Slider
+                              value={[(seg.style.shadowOpacity ?? 1) * 100]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { shadowOpacity: v / 100 },
+                                })
+                              }
+                              min={0}
+                              max={100}
+                              step={5}
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label className="text-xs">Shadow offset X</Label>
+                              <Input
+                                type="number"
+                                value={seg.style.shadowOffsetX}
+                                onChange={(e) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      shadowOffsetX: parseInt(e.target.value, 10) || 0,
+                                    },
+                                  })
+                                }
+                                min={-20}
+                                max={20}
+                                className="mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Shadow offset Y</Label>
+                              <Input
+                                type="number"
+                                value={seg.style.shadowOffsetY}
+                                onChange={(e) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      shadowOffsetY: parseInt(e.target.value, 10) || 0,
+                                    },
+                                  })
+                                }
+                                min={-20}
+                                max={20}
+                                className="mt-1"
                               />
                             </div>
                           </div>
@@ -2916,6 +3343,61 @@ export default function EditorPage() {
                                 </span>
                               </div>
                             </div>
+                          </div>
+                          <div className="flex gap-4">
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Width (padding)</span>
+                                <span>{seg.style.paddingX}px</span>
+                              </div>
+                              <Slider
+                                value={[seg.style.paddingX]}
+                                onValueChange={([v]) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { paddingX: v },
+                                  })
+                                }
+                                min={0}
+                                max={48}
+                                step={2}
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Height (padding)</span>
+                                <span>{seg.style.paddingY}px</span>
+                              </div>
+                              <Slider
+                                value={[seg.style.paddingY]}
+                                onValueChange={([v]) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { paddingY: v },
+                                  })
+                                }
+                                min={0}
+                                max={32}
+                                step={2}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <Label className="text-xs">Border radius</Label>
+                              <span className="text-xs text-muted-foreground">
+                                {seg.style.borderRadius}px
+                              </span>
+                            </div>
+                            <Slider
+                              value={[seg.style.borderRadius]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { borderRadius: v },
+                                })
+                              }
+                              min={0}
+                              max={24}
+                              step={1}
+                            />
                           </div>
                         </TabsContent>
                         <TabsContent value="position" className="mt-0 space-y-3">
@@ -2964,6 +3446,29 @@ export default function EditorPage() {
                               className="mt-1"
                             />
                           </div>
+                          <div>
+                            <div className="flex justify-between">
+                              <Label className="text-xs">Side margin</Label>
+                              <span className="text-xs text-muted-foreground">
+                                {seg.style.containerMarginX ?? 40}px
+                              </span>
+                            </div>
+                            <Slider
+                              value={[seg.style.containerMarginX ?? 40]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { containerMarginX: v },
+                                })
+                              }
+                              min={24}
+                              max={200}
+                              step={4}
+                              className="mt-1"
+                            />
+                            <p className="text-[10px] text-muted-foreground mt-1">
+                              Left/right margin. Larger = narrower text area.
+                            </p>
+                          </div>
                         </TabsContent>
                         <TabsContent value="animation" className="mt-0 space-y-3">
                           <div>
@@ -3009,6 +3514,614 @@ export default function EditorPage() {
                   </p>
                 )}
               </TabsContent>
+
+              <TabsContent
+                value="banners"
+                className="mt-0 outline-none p-4 overflow-auto"
+              >
+                <Label className="mb-2 text-muted-foreground">
+                  Branded Banners
+                </Label>
+                <p className="text-xs text-muted-foreground mb-3">
+                  Add branded call-to-action banners (logo + text) at specific times. Perfect for YouTube, Twitch, Kick, or custom branding.
+                </p>
+
+                {bannerTracks.length === 0 && (
+                  <div className="space-y-3 mb-4">
+                    <Label className="mb-2 text-muted-foreground">
+                      Choose a banner style
+                    </Label>
+                    <div className="grid grid-cols-1 gap-2">
+                      {BANNER_PRESETS.map((preset) => (
+                        <Button
+                          key={preset.id}
+                          variant="outline"
+                          className="flex flex-col items-start p-4 h-auto text-left"
+                          onClick={() => {
+                            const frame =
+                              playerRef.current?.getCurrentFrame() ?? 0;
+                            const newTrack: BannerTrack = {
+                              id: `banner-track-${Date.now()}`,
+                              name: preset.name,
+                              visible: true,
+                              color: BANNER_TRACK_COLORS[0],
+                            };
+                            const newSegment: BannerSegment = {
+                              id: `banner-seg-${Date.now()}`,
+                              trackId: newTrack.id,
+                              logoUrl: preset.logoUrl,
+                              text: "YOUR-PAGE.URL",
+                              startFrame: Math.min(
+                                frame,
+                                compositionDuration - 60
+                              ),
+                              endFrame: Math.min(
+                                frame + 90,
+                                compositionDuration
+                              ),
+                              style: { ...preset.style },
+                            };
+                            setBannerTracks((prev) => [...prev, newTrack]);
+                            setBannerSegments((prev) => [
+                              ...prev,
+                              newSegment,
+                            ]);
+                            setSelectedBannerSegment(newSegment.id);
+                            playerRef.current?.seekTo(newSegment.startFrame);
+                          }}
+                        >
+                          <span className="font-semibold">{preset.name}</span>
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+                  {bannerTracks.map((track) => {
+                    const segments = bannerSegments.filter(
+                      (s) => s.trackId === track.id
+                    );
+                    const isExpanded = !collapsedBannerTrackIds.has(track.id);
+                    return (
+                      <div
+                        key={track.id}
+                        className="rounded-lg border border-border bg-secondary/30 overflow-hidden"
+                      >
+                        <div className="flex items-center gap-1.5 p-2 pr-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={() =>
+                              setCollapsedBannerTrackIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(track.id)) next.delete(track.id);
+                                else next.add(track.id);
+                                return next;
+                              })
+                            }
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="size-3.5" />
+                            ) : (
+                              <ChevronRight className="size-3.5" />
+                            )}
+                          </Button>
+                          <span
+                            className="shrink-0 w-2 h-2 rounded-full"
+                            style={{ backgroundColor: track.color }}
+                          />
+                          <span className="text-xs font-medium truncate flex-1">
+                            {track.name}
+                          </span>
+                          <Switch
+                            checked={track.visible}
+                            onCheckedChange={(visible) =>
+                              setBannerTracks((prev) =>
+                                prev.map((t) =>
+                                  t.id === track.id ? { ...t, visible } : t
+                                )
+                              )
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <Popover
+                            open={bannerPresetPopoverTrackId === track.id}
+                            onOpenChange={(open) =>
+                              setBannerPresetPopoverTrackId(open ? track.id : null)
+                            }
+                          >
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-1.5 text-xs"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Plus className="size-3 mr-0.5" />
+                                Add
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-64 p-2"
+                              align="end"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="text-xs font-medium text-muted-foreground px-2 py-1.5 mb-1">
+                                Choose style
+                              </div>
+                              <div className="space-y-0.5">
+                                {BANNER_PRESETS.map((preset) => (
+                                  <Button
+                                    key={preset.id}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full justify-start h-auto py-2 px-2 text-left"
+                                    onClick={() => {
+                                      setBannerPresetPopoverTrackId(null);
+                                      const frame =
+                                        playerRef.current?.getCurrentFrame() ??
+                                        0;
+                                      const newSegment: BannerSegment = {
+                                        id: `banner-seg-${Date.now()}`,
+                                        trackId: track.id,
+                                        logoUrl: preset.logoUrl,
+                                        text: "YOUR-PAGE.URL",
+                                        startFrame: Math.min(
+                                          frame,
+                                          compositionDuration - 60
+                                        ),
+                                        endFrame: Math.min(
+                                          frame + 90,
+                                          compositionDuration
+                                        ),
+                                        style: { ...preset.style },
+                                      };
+                                      setBannerSegments((prev) => [
+                                        ...prev,
+                                        newSegment,
+                                      ]);
+                                      setSelectedBannerSegment(newSegment.id);
+                                      playerRef.current?.seekTo(
+                                        newSegment.startFrame
+                                      );
+                                      setCollapsedBannerTrackIds((prev) => {
+                                        const next = new Set(prev);
+                                        next.delete(track.id);
+                                        return next;
+                                      });
+                                    }}
+                                  >
+                                    <span className="font-medium">
+                                      {preset.name}
+                                    </span>
+                                  </Button>
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBannerTracks((prev) =>
+                                prev.filter((t) => t.id !== track.id)
+                              );
+                              setBannerSegments((prev) =>
+                                prev.filter((s) => s.trackId !== track.id)
+                              );
+                              if (
+                                bannerSegments.some(
+                                  (s) =>
+                                    s.id === selectedBannerSegment &&
+                                    s.trackId === track.id
+                                )
+                              ) {
+                                setSelectedBannerSegment(null);
+                              }
+                            }}
+                          >
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                        {isExpanded && (
+                          <div className="border-t border-border/50 px-2 pb-2 pt-1.5 space-y-1">
+                            {segments.length === 0 ? (
+                              <p className="text-[10px] text-muted-foreground py-1 px-2">
+                                No segments — click Add
+                              </p>
+                            ) : (
+                              segments.map((seg) => (
+                                <div
+                                  key={seg.id}
+                                  data-banner-segment-id={seg.id}
+                                  onClick={() => {
+                                    setSelectedBannerSegment(seg.id);
+                                    playerRef.current?.seekTo(seg.startFrame);
+                                  }}
+                                  className={cn(
+                                    "flex items-center gap-2 rounded-md border p-2 cursor-pointer transition-colors",
+                                    selectedBannerSegment === seg.id
+                                      ? "border-primary bg-primary/10"
+                                      : "border-border/50 bg-muted/30 hover:bg-muted/50"
+                                  )}
+                                >
+                                  {seg.logoUrl ? (
+                                    <img
+                                      src={seg.logoUrl}
+                                      alt=""
+                                      className="w-8 h-8 object-contain rounded shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-8 h-8 rounded bg-muted shrink-0 flex items-center justify-center text-[10px] text-muted-foreground">
+                                      +
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium truncate">
+                                      {seg.text || "Empty"}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      {formatTime(seg.startFrame)} -{" "}
+                                      {formatTime(seg.endFrame)}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {bannerTracks.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mb-4 border-dashed"
+                    onClick={() => {
+                      const newTrack: BannerTrack = {
+                        id: `banner-track-${Date.now()}`,
+                        name: `Banner ${bannerTracks.length + 1}`,
+                        visible: true,
+                        color:
+                          BANNER_TRACK_COLORS[
+                            bannerTracks.length % BANNER_TRACK_COLORS.length
+                          ],
+                      };
+                      setBannerTracks((prev) => [...prev, newTrack]);
+                      setCollapsedBannerTrackIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(newTrack.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    <Plus className="mr-2 size-4" />
+                    Add track
+                  </Button>
+                )}
+
+                {selectedBannerSegment && (() => {
+                  const seg = bannerSegments.find(
+                    (s) => s.id === selectedBannerSegment
+                  );
+                  if (!seg) return null;
+
+                  return (
+                    <div className="space-y-4 border-t border-border pt-4 mt-4">
+                      <Label className="text-muted-foreground">
+                        Edit selected banner
+                      </Label>
+                      <div className="text-xs text-muted-foreground">
+                        {formatTime(seg.startFrame)} - {formatTime(seg.endFrame)}
+                        {" · "}
+                        Drag on timeline to change
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-xs">Text</Label>
+                          <Input
+                            value={seg.text}
+                            onChange={(e) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? { ...s, text: e.target.value }
+                                    : s
+                                )
+                              )
+                            }
+                            placeholder="YOUR-PAGE.URL"
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Text color</Label>
+                          <ColorPickerInput
+                            value={seg.style.textColor}
+                            onChange={(v) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? { ...s, style: { ...s.style, textColor: v } }
+                                    : s
+                                )
+                              )
+                            }
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Background</Label>
+                          <div className="flex gap-2 mt-1">
+                            <ColorPickerInput
+                              value={seg.style.backgroundColor}
+                              onChange={(v) =>
+                                setBannerSegments((prev) =>
+                                  prev.map((s) =>
+                                    s.id === selectedBannerSegment
+                                      ? {
+                                          ...s,
+                                          style: { ...s.style, backgroundColor: v },
+                                        }
+                                      : s
+                                  )
+                                )
+                              }
+                            />
+                            <div className="flex-1">
+                              <Slider
+                                value={[seg.style.backgroundOpacity * 100]}
+                                onValueChange={([v]) =>
+                                  setBannerSegments((prev) =>
+                                    prev.map((s) =>
+                                      s.id === selectedBannerSegment
+                                        ? {
+                                            ...s,
+                                            style: {
+                                              ...s.style,
+                                              backgroundOpacity: v / 100,
+                                            },
+                                          }
+                                        : s
+                                    )
+                                  )
+                                }
+                                min={0}
+                                max={100}
+                                step={5}
+                              />
+                              <span className="text-[10px] text-muted-foreground">
+                                {Math.round(seg.style.backgroundOpacity * 100)}%
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-xs">
+                            Vertical position ({seg.style.positionY ?? 90}%)
+                          </Label>
+                          <Slider
+                            value={[seg.style.positionY ?? 90]}
+                            onValueChange={([v]) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? {
+                                        ...s,
+                                        style: { ...s.style, positionY: v },
+                                      }
+                                    : s
+                                )
+                              )
+                            }
+                            min={0}
+                            max={100}
+                            step={1}
+                            className="mt-1"
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            0% = top, 100% = bottom
+                          </p>
+                        </div>
+                        <div>
+                          <Label className="text-xs">Animation</Label>
+                          <Select
+                            value={seg.style.animation}
+                            onValueChange={(v) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? {
+                                        ...s,
+                                        style: {
+                                          ...s.style,
+                                          animation: v as BannerStyle["animation"],
+                                        },
+                                      }
+                                    : s
+                                )
+                              )
+                            }
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              <SelectItem value="fade">Fade</SelectItem>
+                              <SelectItem value="slide-up">Slide up</SelectItem>
+                              <SelectItem value="slide-down">Slide down</SelectItem>
+                              <SelectItem value="slide-left">Slide left</SelectItem>
+                              <SelectItem value="slide-right">Slide right</SelectItem>
+                              <SelectItem value="pop">Pop</SelectItem>
+                              <SelectItem value="bounce">Bounce</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <Label className="text-xs">Border radius</Label>
+                            <span className="text-xs text-muted-foreground">
+                              {seg.style.borderRadius}px
+                            </span>
+                          </div>
+                          <Slider
+                            value={[seg.style.borderRadius]}
+                            onValueChange={([v]) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? {
+                                        ...s,
+                                        style: { ...s.style, borderRadius: v },
+                                      }
+                                    : s
+                                )
+                              )
+                            }
+                            min={0}
+                            max={32}
+                            step={1}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="border-t border-border pt-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start text-muted-foreground h-8"
+                          onClick={() =>
+                            setBannerEditorMoreOptionsOpen(
+                              !bannerEditorMoreOptionsOpen
+                            )
+                          }
+                        >
+                          {bannerEditorMoreOptionsOpen ? (
+                            <ChevronDown className="size-4 mr-2" />
+                          ) : (
+                            <ChevronRight className="size-4 mr-2" />
+                          )}
+                          More options
+                        </Button>
+                        {bannerEditorMoreOptionsOpen && (
+                          <div className="space-y-3 mt-2 pl-6">
+                            <div className="flex gap-2">
+                              <div className="flex-1">
+                                <Label className="text-xs">Logo width</Label>
+                                <Input
+                                  type="number"
+                                  value={seg.style.logoWidth}
+                                  onChange={(e) =>
+                                    setBannerSegments((prev) =>
+                                      prev.map((s) =>
+                                        s.id === selectedBannerSegment
+                                          ? {
+                                              ...s,
+                                              style: {
+                                                ...s.style,
+                                                logoWidth:
+                                                  parseInt(e.target.value, 10) ||
+                                                  80,
+                                              },
+                                            }
+                                          : s
+                                      )
+                                    )
+                                  }
+                                  min={20}
+                                  max={300}
+                                  className="mt-1"
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <Label className="text-xs">Logo height</Label>
+                                <Input
+                                  type="number"
+                                  value={seg.style.logoHeight}
+                                  onChange={(e) =>
+                                    setBannerSegments((prev) =>
+                                      prev.map((s) =>
+                                        s.id === selectedBannerSegment
+                                          ? {
+                                              ...s,
+                                              style: {
+                                                ...s.style,
+                                                logoHeight:
+                                                  parseInt(e.target.value, 10) ||
+                                                  80,
+                                              },
+                                            }
+                                          : s
+                                      )
+                                    )
+                                  }
+                                  min={20}
+                                  max={200}
+                                  className="mt-1"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <Label className="text-xs">
+                                Text font size ({seg.style.fontSize}px)
+                              </Label>
+                              <Slider
+                                value={[seg.style.fontSize]}
+                                onValueChange={([v]) =>
+                                  setBannerSegments((prev) =>
+                                    prev.map((s) =>
+                                      s.id === selectedBannerSegment
+                                        ? {
+                                            ...s,
+                                            style: { ...s.style, fontSize: v },
+                                          }
+                                        : s
+                                    )
+                                  )
+                                }
+                                min={12}
+                                max={72}
+                                step={2}
+                                className="mt-1"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-destructive"
+                        onClick={() => {
+                          setBannerSegments((prev) =>
+                            prev.filter((s) => s.id !== selectedBannerSegment)
+                          );
+                          setSelectedBannerSegment(null);
+                        }}
+                      >
+                        <X className="mr-2 size-4" />
+                        Remove banner
+                      </Button>
+                    </div>
+                  );
+                })()}
+
+                {!selectedBannerSegment && bannerSegments.length > 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Click a segment above or on the timeline to edit
+                  </p>
+                )}
+              </TabsContent>
             </div>
           </Tabs>
 
@@ -3048,6 +4161,8 @@ export default function EditorPage() {
                 videoAspectRatio,
                 customTextSegments,
                 customTextTracks,
+                bannerSegments,
+                bannerTracks,
               }}
               durationInFrames={compositionDuration}
               fps={FPS}
@@ -3101,6 +4216,7 @@ export default function EditorPage() {
               setSelectedSubtitle(id);
               setSelectedVideoSegment(null);
               setSelectedTextSegment(null);
+              setSelectedBannerSegment(null);
               if (id) {
                 setLeftPanelCollapsed(false);
                 setLeftPanelTab("subtitles");
@@ -3115,6 +4231,7 @@ export default function EditorPage() {
               setSelectedVideoSegment(id);
               setSelectedSubtitle(null);
               setSelectedTextSegment(null);
+              setSelectedBannerSegment(null);
             }}
             playerRef={playerRef}
             videoDuration={compositionDuration}
@@ -3163,12 +4280,44 @@ export default function EditorPage() {
               setSelectedTextSegment(id);
               setSelectedSubtitle(null);
               setSelectedVideoSegment(null);
+              setSelectedBannerSegment(null);
               if (id) {
                 setLeftPanelCollapsed(false);
                 setLeftPanelTab("text");
                 const seg = customTextSegments.find((s) => s.id === id);
                 if (seg) {
                   setCollapsedTextTrackIds((prev) => {
+                    const next = new Set(prev);
+                    next.delete(seg.trackId);
+                    return next;
+                  });
+                }
+              }
+            }}
+            onAddBannerClick={() => {
+              setLeftPanelCollapsed(false);
+              setLeftPanelTab("banners");
+            }}
+            onDeleteBannerSegment={(id) => {
+              setBannerSegments((prev) => prev.filter((s) => s.id !== id));
+              setSelectedBannerSegment(null);
+            }}
+            bannerTracks={bannerTracks}
+            setBannerTracks={setBannerTracks}
+            bannerSegments={bannerSegments}
+            setBannerSegments={setBannerSegments}
+            selectedBannerSegment={selectedBannerSegment}
+            setSelectedBannerSegment={(id) => {
+              setSelectedBannerSegment(id);
+              setSelectedSubtitle(null);
+              setSelectedVideoSegment(null);
+              setSelectedTextSegment(null);
+              if (id) {
+                setLeftPanelCollapsed(false);
+                setLeftPanelTab("banners");
+                const seg = bannerSegments.find((s) => s.id === id);
+                if (seg) {
+                  setCollapsedBannerTrackIds((prev) => {
                     const next = new Set(prev);
                     next.delete(seg.trackId);
                     return next;

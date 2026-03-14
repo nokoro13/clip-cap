@@ -14,7 +14,10 @@ import type {
   CustomTextSegment,
   CustomTextStyle,
   CustomTextTrack,
+  BannerSegment,
+  BannerTrack,
 } from '@/components/timeline/types';
+import { BannerOverlay } from './BannerOverlay';
 
 // ============ STYLE TYPES ============
 
@@ -180,6 +183,10 @@ export type SubtitleCompositionProps = {
   customTextSegments?: CustomTextSegment[];
   /** Custom text tracks (for visibility filtering) */
   customTextTracks?: CustomTextTrack[];
+  /** Banner segments */
+  bannerSegments?: BannerSegment[];
+  /** Banner tracks (for visibility filtering) */
+  bannerTracks?: BannerTrack[];
 };
 
 // ============ POSITION HELPER ============
@@ -842,6 +849,8 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
   videoAspectRatio = 16 / 9,
   customTextSegments = [],
   customTextTracks = [],
+  bannerSegments = [],
+  bannerTracks = [],
 }) => {
   const { fps } = useVideoConfig();
   const videoStartFrame = Math.round((videoStartFrom / 1000) * fps);
@@ -899,6 +908,14 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
   );
   const visibleCustomTextSegments = customTextSegments.filter(
     (s) => visibleTrackIds.has(s.trackId) && s.endFrame > s.startFrame
+  );
+
+  const visibleBannerTrackIds = new Set(
+    bannerTracks.filter((t) => t.visible).map((t) => t.id)
+  );
+  const visibleBannerSegments = bannerSegments.filter(
+    (s) =>
+      visibleBannerTrackIds.has(s.trackId) && s.endFrame > s.startFrame
   );
 
   return (
@@ -1015,6 +1032,20 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
             durationInFrames={Math.max(1, seg.endFrame - seg.startFrame)}
           >
             <CustomTextOverlay text={seg.text} style={seg.style} />
+          </Sequence>
+        ))}
+
+        {visibleBannerSegments.map((seg) => (
+          <Sequence
+            key={seg.id}
+            from={seg.startFrame}
+            durationInFrames={Math.max(1, seg.endFrame - seg.startFrame)}
+          >
+            <BannerOverlay
+              logoUrl={seg.logoUrl}
+              text={seg.text}
+              style={seg.style}
+            />
           </Sequence>
         ))}
       </AbsoluteFill>

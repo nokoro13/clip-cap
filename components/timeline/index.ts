@@ -5,6 +5,8 @@ export { SubtitleTrack } from "./SubtitleTrack";
 export { SubtitleSegment } from "./SubtitleSegment";
 export { CustomTextTrack } from "./CustomTextTrack";
 export { CustomTextSegment } from "./CustomTextSegment";
+export { BannerTrack } from "./BannerTrack";
+export { BannerSegment } from "./BannerSegment";
 export { ZoomControls } from "./ZoomControls";
 export { DeletionDialog, getStoredDeletePreference } from "./DeletionDialog";
 export * from "./types";

@@ -3,11 +3,12 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ChevronUp, ChevronDown, Trash2, ScissorsLineDashed, Type, Crop, Play, Pause } from "lucide-react";
+import { ChevronUp, ChevronDown, Trash2, ScissorsLineDashed, Type, Crop, Play, Pause, Award } from "lucide-react";
 import { TimelineRuler } from "./TimelineRuler";
 import { VideoTrack } from "./VideoTrack";
 import { SubtitleTrack } from "./SubtitleTrack";
 import { CustomTextTrack } from "./CustomTextTrack";
+import { BannerTrack } from "./BannerTrack";
 import { ZoomControls } from "./ZoomControls";
 import type { TimelineProps, DragState, VideoSegment } from "./types";
 import {
@@ -15,10 +16,12 @@ import {
   EXPANDED_HEIGHT,
   HEADER_HEIGHT,
   RULER_HEIGHT,
+  TRACKS_MAX_HEIGHT,
   MIN_SEGMENT_FRAMES,
   DEFAULT_ZOOM,
   TRANSITION_DURATION,
   TEXT_TRACK_COLORS,
+  BANNER_TRACK_COLORS,
 } from "./constants";
 import {
   calculateTimelineWidth,
@@ -29,6 +32,8 @@ import {
 } from "./utils";
 import {
   removeSubtitlesInRangeAndShift,
+  removeBannerSegmentsInRangeAndShift,
+  removeCustomTextSegmentsInRangeAndShift,
   updateDeletedRangesAfterCut,
 } from "@/lib/timeline-state";
 
@@ -51,8 +56,10 @@ export const Timeline: React.FC<TimelineProps> = ({
   onSeek,
   onDeleteRequest,
   onDeleteTextSegment,
+  onDeleteBannerSegment,
   onCropClick,
   onAddTextTrackClick,
+  onAddBannerClick,
   setRawSegmentSubtitles,
   setWordSubtitles,
   customTextTracks = [],
@@ -61,6 +68,12 @@ export const Timeline: React.FC<TimelineProps> = ({
   setCustomTextSegments,
   selectedTextSegment,
   setSelectedTextSegment,
+  bannerTracks = [],
+  setBannerTracks,
+  bannerSegments = [],
+  setBannerSegments,
+  selectedBannerSegment,
+  setSelectedBannerSegment,
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -151,6 +164,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       const subtitle = subtitles.find((s) => s.id === id);
       const videoSegment = videoSegments.find((s) => s.id === id);
       const textSegment = customTextSegments.find((s) => s.id === id);
+      const bannerSegment = bannerSegments.find((s) => s.id === id);
 
       if (subtitle) {
         setDragState({
@@ -180,6 +194,15 @@ export const Timeline: React.FC<TimelineProps> = ({
           endFrame: textSegment.endFrame,
           isTextSegment: true,
         });
+      } else if (bannerSegment) {
+        setDragState({
+          id,
+          type,
+          startX,
+          startFrame: bannerSegment.startFrame,
+          endFrame: bannerSegment.endFrame,
+          isBannerSegment: true,
+        });
       } else {
         return;
       }
@@ -187,7 +210,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       document.body.style.cursor =
         type === "move" ? "grabbing" : "ew-resize";
     },
-    [subtitles, videoSegments, customTextSegments, setVideoSegments]
+    [subtitles, videoSegments, customTextSegments, bannerSegments, setVideoSegments]
   );
 
   useEffect(() => {
@@ -239,6 +262,48 @@ export const Timeline: React.FC<TimelineProps> = ({
         );
       } else if (dragState.isTextSegment && setCustomTextSegments) {
         setCustomTextSegments((prev) =>
+          prev.map((seg) => {
+            if (seg.id !== dragState.id) return seg;
+
+            const duration = dragState.endFrame - dragState.startFrame;
+
+            if (dragState.type === "move") {
+              const newStart = clamp(
+                dragState.startFrame + deltaFrames,
+                0,
+                videoDuration - duration
+              );
+              return {
+                ...seg,
+                startFrame: Math.round(newStart),
+                endFrame: Math.round(newStart + duration),
+              };
+            } else if (dragState.type === "trim-start") {
+              const newStart = clamp(
+                dragState.startFrame + deltaFrames,
+                0,
+                dragState.endFrame - MIN_SEGMENT_FRAMES
+              );
+              return {
+                ...seg,
+                startFrame: Math.round(newStart),
+              };
+            } else if (dragState.type === "trim-end") {
+              const newEnd = clamp(
+                dragState.endFrame + deltaFrames,
+                dragState.startFrame + MIN_SEGMENT_FRAMES,
+                videoDuration
+              );
+              return {
+                ...seg,
+                endFrame: Math.round(newEnd),
+              };
+            }
+            return seg;
+          })
+        );
+      } else if (dragState.isBannerSegment && setBannerSegments) {
+        setBannerSegments((prev) =>
           prev.map((seg) => {
             if (seg.id !== dragState.id) return seg;
 
@@ -337,7 +402,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       window.removeEventListener("mousemove", handleMouseMove);
       window.removeEventListener("mouseup", handleMouseUp);
     };
-  }, [dragState, fps, zoom, videoDuration, setSubtitles, setVideoSegments, setCustomTextSegments]);
+  }, [dragState, fps, zoom, videoDuration, setSubtitles, setVideoSegments, setCustomTextSegments, setBannerSegments]);
 
   const handleSplit = useCallback(() => {
     // Find subtitle at current frame
@@ -430,6 +495,40 @@ export const Timeline: React.FC<TimelineProps> = ({
     setSelectedTextSegment,
   ]);
 
+  const handleSplitBanner = useCallback(() => {
+    if (!setBannerSegments || bannerSegments.length === 0) return;
+
+    const segment = bannerSegments.find(
+      (s) => currentFrame >= s.startFrame && currentFrame < s.endFrame
+    );
+    if (!segment) return;
+
+    const segmentDuration = segment.endFrame - segment.startFrame;
+    if (segmentDuration < MIN_SEGMENT_FRAMES * 2) return;
+
+    const firstPart = {
+      ...segment,
+      id: `${segment.id}-split-1-${Date.now()}`,
+      endFrame: currentFrame,
+    };
+
+    const secondPart = {
+      ...segment,
+      id: `${segment.id}-split-2-${Date.now()}`,
+      startFrame: currentFrame,
+    };
+
+    setBannerSegments((prev) =>
+      prev.flatMap((s) => (s.id === segment.id ? [firstPart, secondPart] : [s]))
+    );
+    setSelectedBannerSegment?.(null);
+  }, [
+    bannerSegments,
+    currentFrame,
+    setBannerSegments,
+    setSelectedBannerSegment,
+  ]);
+
   const handleSplitVideo = useCallback(() => {
     if (!setVideoSegments || videoSegments.length === 0) return;
 
@@ -473,6 +572,15 @@ export const Timeline: React.FC<TimelineProps> = ({
   const handleDeleteClick = useCallback(() => {
     if (selectedSubtitle && onDeleteRequest) {
       onDeleteRequest(selectedSubtitle, null);
+    } else if (selectedBannerSegment && (onDeleteBannerSegment || setBannerSegments)) {
+      if (onDeleteBannerSegment) {
+        onDeleteBannerSegment(selectedBannerSegment);
+      } else {
+        setBannerSegments?.((prev) =>
+          prev.filter((s) => s.id !== selectedBannerSegment)
+        );
+        setSelectedBannerSegment?.(null);
+      }
     } else if (selectedTextSegment && (onDeleteTextSegment || setCustomTextSegments)) {
       if (onDeleteTextSegment) {
         onDeleteTextSegment(selectedTextSegment);
@@ -502,6 +610,20 @@ export const Timeline: React.FC<TimelineProps> = ({
       setRawSegmentSubtitles?.((prev) => shiftSubtitles(prev));
       setWordSubtitles?.((prev) => shiftSubtitles(prev));
 
+      // Remove banner segments in deleted range and shift remaining left
+      if (setBannerSegments) {
+        setBannerSegments((prev) =>
+          removeBannerSegmentsInRangeAndShift(prev, cutStart, cutEnd)
+        );
+      }
+
+      // Remove custom text segments in deleted range and shift remaining left
+      if (setCustomTextSegments) {
+        setCustomTextSegments((prev) =>
+          removeCustomTextSegmentsInRangeAndShift(prev, cutStart, cutEnd)
+        );
+      }
+
       // Update deleted ranges (add new, shift/remove overlapping)
       if (setDeletedRanges) {
         setDeletedRanges((prev) =>
@@ -530,9 +652,13 @@ export const Timeline: React.FC<TimelineProps> = ({
     selectedSubtitle,
     selectedVideoSegment,
     selectedTextSegment,
+    selectedBannerSegment,
     videoSegments,
     onDeleteRequest,
     onDeleteTextSegment,
+    onDeleteBannerSegment,
+    setBannerSegments,
+    setSelectedBannerSegment,
     setSubtitles,
     setRawSegmentSubtitles,
     setWordSubtitles,
@@ -611,7 +737,8 @@ export const Timeline: React.FC<TimelineProps> = ({
             disabled={
               !selectedSubtitle &&
               !selectedVideoSegment &&
-              !selectedTextSegment
+              !selectedTextSegment &&
+              !selectedBannerSegment
             }
             title="Delete selected (Delete key)"
           >
@@ -693,8 +820,11 @@ export const Timeline: React.FC<TimelineProps> = ({
         />
       </div>
 
-      {/* Ruler + Tracks share the same horizontal scroll area */}
-      <div className="flex-1 overflow-hidden">
+      {/* Ruler + Tracks: max height so video player stays visible; sticky ruler when scrolling */}
+      <div
+        className="flex-1 min-h-0 overflow-hidden"
+        style={{ maxHeight: isExpanded ? TRACKS_MAX_HEIGHT : undefined }}
+      >
         <div
           ref={tracksRef}
           className="overflow-x-auto overflow-y-auto h-full relative"
@@ -702,44 +832,64 @@ export const Timeline: React.FC<TimelineProps> = ({
         >
           <div
             className="relative"
-            style={{ width: timelineWidth, minWidth: "100%", maxHeight: "184px" }}
+            style={{ width: timelineWidth, minWidth: "100%" }}
           >
-            {/* Full-height playhead: syncs with Remotion Player, draggable to scrub */}
+            {/* Sticky ruler + playhead: stays visible when scrolling tracks */}
             <div
-              className={cn(
-                "absolute top-0 bottom-0 z-20 flex justify-center",
-                "cursor-ew-resize select-none touch-none",
-                isDraggingPlayhead && "pointer-events-none"
-              )}
+              className="sticky top-0 z-20 shrink-0 bg-secondary"
+              style={{ width: timelineWidth }}
+            >
+              <div
+                className={cn(
+                  "absolute top-0 bottom-0 z-10 flex justify-center",
+                  "cursor-ew-resize select-none touch-none",
+                  isDraggingPlayhead && "pointer-events-none"
+                )}
+                style={{
+                  left: framesToPixels(currentFrame, fps, zoom),
+                  transform: "translateX(-50%)",
+                  height: RULER_HEIGHT,
+                }}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingPlayhead(true);
+                }}
+                aria-hidden
+                title={`Frame ${currentFrame} – drag to scrub`}
+              >
+                {/* Wider hit area for easier grabbing */}
+                <div className="absolute inset-y-0 w-6 -left-3" />
+                {/* Line */}
+                <div className="absolute top-0 bottom-0 w-0.5 rounded-full bg-primary shadow-md" />
+                {/* Head */}
+                <div
+                  className="absolute top-0 left-1/2 w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background shadow-md"
+                  aria-hidden
+                />
+              </div>
+              <TimelineRuler
+                videoDuration={videoDuration}
+                fps={fps}
+                zoom={zoom}
+                currentFrame={currentFrame}
+                onSeek={onSeek}
+              />
+            </div>
+            {/* Tracks: scroll when many */}
+            <div className="relative" style={{ width: timelineWidth }}>
+            <div
+              className="absolute top-0 bottom-0 z-20 flex justify-center pointer-events-none"
               style={{
                 left: framesToPixels(currentFrame, fps, zoom),
                 transform: "translateX(-50%)",
-              }}
-              onMouseDown={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setIsDraggingPlayhead(true);
+                height: "100%",
               }}
               aria-hidden
-              title={`Frame ${currentFrame} – drag to scrub`}
             >
-              {/* Wider hit area for easier grabbing */}
-              <div className="absolute inset-y-0 w-6 -left-3" />
-              {/* Line */}
-              <div className="absolute top-0 bottom-0 w-0.5 rounded-full bg-primary shadow-md" />
-              {/* Head */}
-              <div
-                className="absolute top-0 left-1/2 w-4 h-4 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-primary bg-background shadow-md"
-                aria-hidden
-              />
+              {/* Full-height playhead line through tracks (behind segments so they remain clickable) */}
+              <div className="absolute top-0 bottom-0 w-0.5 rounded-full bg-primary/60" />
             </div>
-            <TimelineRuler
-              videoDuration={videoDuration}
-              fps={fps}
-              zoom={zoom}
-              currentFrame={currentFrame}
-              onSeek={onSeek}
-            />
             <VideoTrack
               videoSegments={videoSegments}
               selectedSegment={selectedVideoSegment ?? null}
@@ -764,17 +914,27 @@ export const Timeline: React.FC<TimelineProps> = ({
                 track={track}
                 segments={customTextSegments.filter((s) => s.trackId === track.id)}
                 selectedSegment={selectedTextSegment ?? null}
-                onSelectSegment={(id) => {
-                  setSelectedTextSegment?.(id);
-                  setSelectedSubtitle?.(null);
-                  setSelectedVideoSegment?.(null);
-                }}
+                onSelectSegment={setSelectedTextSegment ?? (() => {})}
                 videoDuration={videoDuration}
                 fps={fps}
                 zoom={zoom}
                 onDragStart={handleDragStart}
               />
             ))}
+            {bannerTracks.map((track) => (
+              <BannerTrack
+                key={track.id}
+                track={track}
+                segments={bannerSegments.filter((s) => s.trackId === track.id)}
+                selectedSegment={selectedBannerSegment ?? null}
+                onSelectSegment={setSelectedBannerSegment ?? (() => {})}
+                videoDuration={videoDuration}
+                fps={fps}
+                zoom={zoom}
+                onDragStart={handleDragStart}
+              />
+            ))}
+            </div>
           </div>
         </div>
       </div>

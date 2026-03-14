@@ -65,6 +65,77 @@ export interface CustomTextTrack {
   color: string;
 }
 
+/** Style for branded banner overlay segments */
+export interface BannerStyle {
+  layout: "horizontal" | "vertical" | "logo-only" | "text-only";
+  logoPosition: "left" | "right" | "top" | "bottom";
+  spacing: number;
+  logoWidth: number;
+  logoHeight: number;
+  logoScale: number;
+  logoOpacity: number;
+  logoBorderRadius: number;
+  fontFamily: string;
+  fontSize: number;
+  fontWeight: number;
+  fontStyle?: "normal" | "italic";
+  textColor: string;
+  textTransform?: "none" | "uppercase" | "lowercase";
+  backgroundColor: string;
+  backgroundOpacity: number;
+  borderRadius: number;
+  paddingX: number;
+  paddingY: number;
+  shadowColor: string;
+  shadowBlur: number;
+  shadowOpacity: number;
+  shadowOffsetX: number;
+  shadowOffsetY: number;
+  position:
+    | "top-left"
+    | "top-center"
+    | "top-right"
+    | "center-left"
+    | "center"
+    | "center-right"
+    | "bottom-left"
+    | "bottom-center"
+    | "bottom-right"
+    | "custom";
+  positionX?: number;
+  positionY?: number;
+  marginX: number;
+  marginY: number;
+  animation:
+    | "none"
+    | "fade"
+    | "slide-up"
+    | "slide-down"
+    | "slide-left"
+    | "slide-right"
+    | "pop"
+    | "bounce";
+}
+
+/** Banner segment - branded overlay at specific time range */
+export interface BannerSegment {
+  id: string;
+  trackId: string;
+  logoUrl: string;
+  text: string;
+  startFrame: number;
+  endFrame: number;
+  style: BannerStyle;
+}
+
+/** Banner track - container for banner segments */
+export interface BannerTrack {
+  id: string;
+  name: string;
+  visible: boolean;
+  color: string;
+}
+
 /** Deleted time range - persists across preset changes */
 export interface DeletedRange {
   id: string;
@@ -103,10 +174,14 @@ export interface TimelineProps {
   onDeleteRequest?: (subtitleId: string | null, videoSegmentId: string | null) => void;
   /** Callback when user wants to delete selected custom text segment */
   onDeleteTextSegment?: (segmentId: string) => void;
+  /** Callback when user wants to delete selected banner segment */
+  onDeleteBannerSegment?: (segmentId: string) => void;
   /** Callback when user wants to open crop dialog */
   onCropClick?: () => void;
   /** Callback when user clicks Add text track (e.g. to expand timeline and switch sidebar to text tab) */
   onAddTextTrackClick?: () => void;
+  /** Callback when user clicks Add banner track (e.g. to expand timeline and switch sidebar to banners tab) */
+  onAddBannerClick?: () => void;
   /** Optional: sync raw/word subtitle sources when video cuts occur (for preset switching) */
   setRawSegmentSubtitles?: React.Dispatch<React.SetStateAction<EnhancedSubtitle[]>>;
   setWordSubtitles?: React.Dispatch<React.SetStateAction<EnhancedSubtitle[]>>;
@@ -117,6 +192,13 @@ export interface TimelineProps {
   setCustomTextSegments?: React.Dispatch<React.SetStateAction<CustomTextSegment[]>>;
   selectedTextSegment?: string | null;
   setSelectedTextSegment?: React.Dispatch<React.SetStateAction<string | null>>;
+  /** Banner tracks */
+  bannerTracks?: BannerTrack[];
+  setBannerTracks?: React.Dispatch<React.SetStateAction<BannerTrack[]>>;
+  bannerSegments?: BannerSegment[];
+  setBannerSegments?: React.Dispatch<React.SetStateAction<BannerSegment[]>>;
+  selectedBannerSegment?: string | null;
+  setSelectedBannerSegment?: React.Dispatch<React.SetStateAction<string | null>>;
 }
 
 export interface DragState {
@@ -131,6 +213,8 @@ export interface DragState {
   isVideoSegment?: boolean;
   /** For custom text segments */
   isTextSegment?: boolean;
+  /** For banner segments */
+  isBannerSegment?: boolean;
 }
 
 export interface TimelineState {
@@ -210,6 +294,37 @@ export interface CustomTextSegmentProps {
 export interface CustomTextTrackProps {
   track: CustomTextTrack;
   segments: CustomTextSegment[];
+  selectedSegment: string | null;
+  onSelectSegment: (id: string) => void;
+  videoDuration: number;
+  fps: number;
+  zoom: number;
+  onDragStart: (
+    e: React.MouseEvent,
+    id: string,
+    type: "move" | "trim-start" | "trim-end"
+  ) => void;
+}
+
+export interface BannerSegmentProps {
+  segment: BannerSegment;
+  index: number;
+  isSelected: boolean;
+  videoDuration: number;
+  fps: number;
+  zoom: number;
+  color: string;
+  onSelect: (id: string) => void;
+  onDragStart: (
+    e: React.MouseEvent,
+    id: string,
+    type: "move" | "trim-start" | "trim-end"
+  ) => void;
+}
+
+export interface BannerTrackProps {
+  track: BannerTrack;
+  segments: BannerSegment[];
   selectedSegment: string | null;
   onSelectSegment: (id: string) => void;
   videoDuration: number;

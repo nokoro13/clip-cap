@@ -3,6 +3,8 @@ import type {
   VideoTransform,
   DeletedRange,
   EnhancedSubtitle,
+  BannerSegment,
+  CustomTextSegment,
 } from "@/components/timeline/types";
 import type { WordTiming } from "@/remotion/Composition";
 
@@ -184,6 +186,102 @@ export function removeSubtitlesInRangeAndShift(
         if (!subtitleOverlapsRange(s, cutStart, cutEnd)) {
           result.push(s);
         }
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Remove banner segments in [cutStart, cutEnd] and shift segments after cutEnd to the left.
+ * Overlapping segments are split: keep the part before the cut and the part after (shifted).
+ */
+export function removeBannerSegmentsInRangeAndShift(
+  segments: BannerSegment[],
+  cutStart: number,
+  cutEnd: number
+): BannerSegment[] {
+  const duration = cutEnd - cutStart;
+  const result: BannerSegment[] = [];
+
+  for (const seg of segments) {
+    if (seg.startFrame >= cutEnd) {
+      result.push({
+        ...seg,
+        startFrame: seg.startFrame - duration,
+        endFrame: seg.endFrame - duration,
+      });
+    } else if (seg.endFrame <= cutStart) {
+      result.push(seg);
+    } else {
+      const beforeDuration = cutStart - seg.startFrame;
+      const afterStart = cutEnd;
+      const afterEnd = seg.endFrame;
+      const afterDuration = afterEnd - afterStart;
+
+      if (beforeDuration > 0) {
+        result.push({
+          ...seg,
+          id: `${seg.id}-cut-before-${Date.now()}`,
+          endFrame: cutStart,
+        });
+      }
+      if (afterDuration > 0) {
+        result.push({
+          ...seg,
+          id: `${seg.id}-cut-after-${Date.now()}`,
+          startFrame: afterStart - duration,
+          endFrame: afterEnd - duration,
+        });
+      }
+    }
+  }
+
+  return result;
+}
+
+/**
+ * Remove custom text segments in [cutStart, cutEnd] and shift segments after cutEnd to the left.
+ * Overlapping segments are split: keep the part before the cut and the part after (shifted).
+ */
+export function removeCustomTextSegmentsInRangeAndShift(
+  segments: CustomTextSegment[],
+  cutStart: number,
+  cutEnd: number
+): CustomTextSegment[] {
+  const duration = cutEnd - cutStart;
+  const result: CustomTextSegment[] = [];
+
+  for (const seg of segments) {
+    if (seg.startFrame >= cutEnd) {
+      result.push({
+        ...seg,
+        startFrame: seg.startFrame - duration,
+        endFrame: seg.endFrame - duration,
+      });
+    } else if (seg.endFrame <= cutStart) {
+      result.push(seg);
+    } else {
+      const beforeDuration = cutStart - seg.startFrame;
+      const afterStart = cutEnd;
+      const afterEnd = seg.endFrame;
+      const afterDuration = afterEnd - afterStart;
+
+      if (beforeDuration > 0) {
+        result.push({
+          ...seg,
+          id: `${seg.id}-cut-before-${Date.now()}`,
+          endFrame: cutStart,
+        });
+      }
+      if (afterDuration > 0) {
+        result.push({
+          ...seg,
+          id: `${seg.id}-cut-after-${Date.now()}`,
+          startFrame: afterStart - duration,
+          endFrame: afterEnd - duration,
+        });
       }
     }
   }

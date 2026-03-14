@@ -1,6 +1,8 @@
 // Timeline dimensions
 export const COLLAPSED_HEIGHT = 40;
 export const EXPANDED_HEIGHT = 'max-content';
+/** Max height for ruler + tracks area when expanded; prevents timeline from shrinking video player */
+export const TRACKS_MAX_HEIGHT = 240;
 export const TRACK_HEIGHT = 48;
 export const RULER_HEIGHT = 32;
 export const HEADER_HEIGHT = 40;
@@ -31,6 +33,15 @@ export const TEXT_TRACK_COLORS = [
   "#f59e0b",
   "#ef4444",
   "#8b5cf6",
+];
+
+// Colors for banner tracks
+export const BANNER_TRACK_COLORS = [
+  "#14b8a6",
+  "#6366f1",
+  "#f97316",
+  "#ec4899",
+  "#22c55e",
 ];
 
 // Colors for video segments
