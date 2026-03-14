@@ -23,14 +23,22 @@ export default async function ExperiencePage({
 
 	const displayName = user.name || `@${user.username}`;
 
-	const accessPassId = process.env.NEXT_PUBLIC_WHOP_PREMIUM_PRODUCT_ID;
-	if (!accessPassId) {
+	const premiumProductId = process.env.NEXT_PUBLIC_WHOP_PREMIUM_PRODUCT_ID;
+	const basicProductId = process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID;
+	if (!premiumProductId) {
 		throw new Error("NEXT_PUBLIC_WHOP_PREMIUM_PRODUCT_ID is not set");
 	}
 
-	const productAccess = await whopsdk.users.checkAccess(accessPassId, { id: userId });
+	const [premiumAccess, basicAccess] = await Promise.all([
+		whopsdk.users.checkAccess(premiumProductId, { id: userId }),
+		basicProductId
+			? whopsdk.users.checkAccess(basicProductId, { id: userId })
+			: Promise.resolve({ has_access: false }),
+	]);
 
-	console.log(productAccess);
+	const productAccess = {
+		has_access: premiumAccess.has_access || basicAccess.has_access,
+	};
 
 	return (
 		<div className="flex flex-col p-8 gap-6">
@@ -50,7 +58,11 @@ export default async function ExperiencePage({
 				Upload a video to generate AI-powered subtitles, or bulk process multiple videos at once.
 			</p>
 
-			<QuickStartCards />
+			<QuickStartCards
+				hasAccess={productAccess.has_access}
+				basicCheckoutUrl="https://whop.com/checkout/plan_xtThkvdruzGaa"
+				premiumCheckoutUrl="https://whop.com/checkout/plan_OHjnjQ68gcbct"
+			/>
 			<RecentProjectsGallery experienceId={experienceId} />
 
 			<h3 className="text-6 font-bold">Experience data</h3>

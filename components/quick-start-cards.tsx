@@ -1,9 +1,10 @@
 'use client';
 
 import { useRouter, useParams } from 'next/navigation';
-import { Captions, Layers } from 'lucide-react';
+import { Captions, Layers, Lock } from 'lucide-react';
 import { SimpleUploadDialog } from '@/components/simple-upload-dialog';
 import { VideoUploadDialog } from '@/components/video-upload-dialog';
+import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { cn } from '@/lib/utils';
 import {
   addProjectToIndex,
@@ -12,8 +13,15 @@ import {
 } from '@/lib/project-index';
 import { saveVideoBlob } from '@/lib/video-storage';
 
+const DEFAULT_BASIC_CHECKOUT_URL = 'https://whop.com/checkout/plan_xtThkvdruzGaa';
+const DEFAULT_PREMIUM_CHECKOUT_URL = 'https://whop.com/checkout/plan_OHjnjQ68gcbct';
+
 interface QuickStartCardsProps {
   className?: string;
+  /** When false, upload cards are disabled and a subscribe CTA is shown. Default true. */
+  hasAccess?: boolean;
+  basicCheckoutUrl?: string;
+  premiumCheckoutUrl?: string;
 }
 
 const ESTIMATED_PROCESSING_SECONDS = 60;
@@ -39,7 +47,12 @@ function createProgressUpdater(experienceId: string, projectId: string) {
   return { stop };
 }
 
-export function QuickStartCards({ className }: QuickStartCardsProps) {
+export function QuickStartCards({
+  className,
+  hasAccess = true,
+  basicCheckoutUrl = DEFAULT_BASIC_CHECKOUT_URL,
+  premiumCheckoutUrl = DEFAULT_PREMIUM_CHECKOUT_URL,
+}: QuickStartCardsProps) {
   const router = useRouter();
   const params = useParams();
   const experienceId = params.experienceId as string;
@@ -259,66 +272,122 @@ export function QuickStartCards({ className }: QuickStartCardsProps) {
     handleYoutubeUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
   };
 
+  const cardContent = (props: {
+    icon: React.ReactNode;
+    title: string;
+    subtitle: string;
+    gradient: string;
+  }) => (
+    <div
+      className={cn(
+        'flex h-full flex-col items-center justify-center gap-4 rounded-xl p-6 transition-all',
+        props.gradient,
+        hasAccess
+          ? 'cursor-pointer bg-muted/50 hover:bg-muted hover:shadow-md'
+          : 'cursor-not-allowed opacity-60'
+      )}
+    >
+      <div className="relative size-20">
+        {props.icon}
+        {!hasAccess && (
+          <div className="absolute inset-0 flex items-center justify-center rounded-2xl bg-black/50">
+            <Lock className="size-8 text-white" />
+          </div>
+        )}
+      </div>
+      <div className="text-center">
+        <h3 className="text-base font-semibold">{props.title}</h3>
+        <p className="mt-1 text-sm text-muted-foreground">{props.subtitle}</p>
+      </div>
+    </div>
+  );
+
   return (
     <>
       <div className={cn('space-y-4', className)}>
-        <h2 className="text-sm font-medium text-muted-foreground">Quick start</h2>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-sm font-medium text-muted-foreground">Quick start</h2>
+          {!hasAccess && (
+            <SubscribeDialog
+              basicCheckoutUrl={basicCheckoutUrl}
+              premiumCheckoutUrl={premiumCheckoutUrl}
+            />
+          )}
+        </div>
 
         <div className="grid auto-rows-fr grid-cols-1 gap-4 sm:grid-cols-2 lg:max-w-2xl">
           {/* Generate Subtitles Card */}
-          <SimpleUploadDialog
-            onVideoSelect={handleSingleVideoSelect}
-            title="Generate Subtitles"
-            description="MP4 or MOV, Max size: 500MB (audio extracted for transcription)"
-            trigger={
-              <button type="button" className="h-full w-full text-left">
-                <div
-                  className={cn(
-                    'flex h-full cursor-pointer flex-col items-center justify-center gap-4 rounded-xl bg-muted/50 p-6 transition-all',
-                    'hover:bg-muted hover:shadow-md'
-                  )}
-                >
+          {hasAccess ? (
+            <SimpleUploadDialog
+              onVideoSelect={handleSingleVideoSelect}
+              title="Generate Subtitles"
+              description="MP4 or MOV, Max size: 500MB (audio extracted for transcription)"
+              trigger={
+                <button type="button" className="h-full w-full text-left">
+                  {cardContent({
+                    icon: (
+                      <div className="flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100">
+                        <Captions className="size-10 text-violet-600" />
+                      </div>
+                    ),
+                    title: 'Generate Subtitles',
+                    subtitle: 'Get trendy AI captions in just one click',
+                    gradient: '',
+                  })}
+                </button>
+              }
+            />
+          ) : (
+            <div className="h-full w-full text-left">
+              {cardContent({
+                icon: (
                   <div className="flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100">
                     <Captions className="size-10 text-violet-600" />
                   </div>
-                  <div className="text-center">
-                    <h3 className="text-base font-semibold">Generate Subtitles</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Get trendy AI captions in just one click
-                    </p>
-                  </div>
-                </div>
-              </button>
-            }
-          />
+                ),
+                title: 'Generate Subtitles',
+                subtitle: 'Get trendy AI captions in just one click',
+                gradient: '',
+              })}
+            </div>
+          )}
 
           {/* Bulk Generate Card */}
-          <VideoUploadDialog
-            onVideoSelect={handleBulkVideoSelect}
-            onYoutubeUrl={handleYoutubeUrl}
-            onGoogleDriveImport={handleGoogleDriveImport}
-            onSampleVideoSelect={handleSampleVideoSelect}
-            trigger={
-              <button type="button" className="h-full w-full text-left">
-                <div
-                  className={cn(
-                    'flex h-full cursor-pointer flex-col items-center justify-center gap-4 rounded-xl bg-muted/50 p-6 transition-all',
-                    'hover:bg-muted hover:shadow-md'
-                  )}
-                >
+          {hasAccess ? (
+            <VideoUploadDialog
+              onVideoSelect={handleBulkVideoSelect}
+              onYoutubeUrl={handleYoutubeUrl}
+              onGoogleDriveImport={handleGoogleDriveImport}
+              onSampleVideoSelect={handleSampleVideoSelect}
+              trigger={
+                <button type="button" className="h-full w-full text-left">
+                  {cardContent({
+                    icon: (
+                      <div className="flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-cyan-100">
+                        <Layers className="size-10 text-blue-600" />
+                      </div>
+                    ),
+                    title: 'Bulk Generate',
+                    subtitle: 'Process multiple videos or YouTube links',
+                    gradient: '',
+                  })}
+                </button>
+              }
+            />
+          ) : (
+            <div className="h-full w-full text-left">
+              {cardContent({
+                icon: (
                   <div className="flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-cyan-100">
                     <Layers className="size-10 text-blue-600" />
                   </div>
-                  <div className="text-center">
-                    <h3 className="text-base font-semibold">Bulk Generate</h3>
-                    <p className="mt-1 text-sm text-muted-foreground">
-                      Process multiple videos or YouTube links
-                    </p>
-                  </div>
-                </div>
-              </button>
-            }
-          />
+                ),
+                title: 'Bulk Generate',
+                subtitle: 'Process multiple videos or YouTube links',
+                gradient: '',
+              })}
+            </div>
+          )}
         </div>
       </div>
     </>
