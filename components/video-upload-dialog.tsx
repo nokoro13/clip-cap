@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useRef, useCallback } from 'react';
-import { Upload, Play, X } from 'lucide-react';
+import { Lock, Upload } from 'lucide-react';
 import {
   Dialog,
   DialogContent,
@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
+import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { cn } from '@/lib/utils';
 
 interface VideoUploadDialogProps {
@@ -19,6 +19,8 @@ interface VideoUploadDialogProps {
   onGoogleDriveImport?: () => void;
   onSampleVideoSelect?: () => void;
   trigger?: React.ReactNode;
+  /** When set, the upload UI is replaced with a subscribe CTA that opens the tier dialog. */
+  subscriptionGate?: { basicCheckoutUrl: string; premiumCheckoutUrl: string };
 }
 
 export function VideoUploadDialog({
@@ -27,11 +29,13 @@ export function VideoUploadDialog({
   onGoogleDriveImport,
   onSampleVideoSelect,
   trigger,
+  subscriptionGate,
 }: VideoUploadDialogProps) {
   const [open, setOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const showSubscribeInstead = Boolean(subscriptionGate);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -96,72 +100,81 @@ export function VideoUploadDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
-          {/* YouTube URL Input */}
-          {/* <div className="relative">
-            <div className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2">
-              <div className="flex size-6 items-center justify-center rounded bg-red-600">
-                <Play className="size-3 fill-white text-white" />
+          {showSubscribeInstead && subscriptionGate ? (
+            <div className="flex flex-col items-center justify-center gap-4 rounded-lg border-2 border-dashed border-muted-foreground/25 bg-muted/30 px-6 py-12">
+              <div className="flex size-14 items-center justify-center rounded-full bg-amber-100 dark:bg-amber-950/50">
+                <Lock className="size-7 text-amber-600 dark:text-amber-500" />
+              </div>
+              <div className="text-center">
+                <p className="text-lg font-medium">Subscribe to unlock</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Choose a plan to bulk process videos and get viral clips.
+                </p>
+                <SubscribeDialog
+                  basicCheckoutUrl={subscriptionGate.basicCheckoutUrl}
+                  premiumCheckoutUrl={subscriptionGate.premiumCheckoutUrl}
+                  trigger={
+                    <Button variant="default" size="lg" className="mt-4">
+                      Choose a plan
+                    </Button>
+                  }
+                />
               </div>
             </div>
-            <Input
-              placeholder="Paste a Youtube URL..."
-              value={youtubeUrl}
-              onChange={(e) => setYoutubeUrl(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleYoutubeSubmit()}
-              className="h-11 pl-12"
-            />
-          </div> */}
+          ) : (
+            <>
+              {/* Google Drive Button */}
+              <Button
+                variant="outline"
+                className="mx-auto w-fit gap-2"
+                onClick={onGoogleDriveImport}
+              >
+                <GoogleDriveIcon className="size-5" />
+                Import from Google Drive
+              </Button>
 
-          {/* Google Drive Button */}
-          <Button
-            variant="outline"
-            className="mx-auto w-fit gap-2"
-            onClick={onGoogleDriveImport}
-          >
-            <GoogleDriveIcon className="size-5" />
-            Import from Google Drive
-          </Button>
+              {/* Drop Zone */}
+              <div
+                onDragOver={handleDragOver}
+                onDragLeave={handleDragLeave}
+                onDrop={handleDrop}
+                className={cn(
+                  'flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 transition-colors',
+                  isDragging
+                    ? 'border-primary bg-primary/5'
+                    : 'border-muted-foreground/25 hover:border-muted-foreground/50'
+                )}
+              >
+                <div className="flex size-12 items-center justify-center rounded-lg bg-orange-50">
+                  <Upload className="size-6 text-orange-500" />
+                </div>
+                <div className="text-center">
+                  <p className="font-medium">
+                    Drop or{' '}
+                    <button
+                      type="button"
+                      onClick={handleBrowseClick}
+                      className="cursor-pointer underline underline-offset-2 hover:text-primary"
+                    >
+                      browse your video
+                    </button>
+                  </p>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    MP4 or MOV, Max duration: 120 min Max size: 10GB
+                  </p>
+                </div>
+              </div>
 
-          {/* Drop Zone */}
-          <div
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className={cn(
-              'flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 transition-colors',
-              isDragging
-                ? 'border-primary bg-primary/5'
-                : 'border-muted-foreground/25 hover:border-muted-foreground/50'
-            )}
-          >
-            <div className="flex size-12 items-center justify-center rounded-lg bg-orange-50">
-              <Upload className="size-6 text-orange-500" />
-            </div>
-            <div className="text-center">
-              <p className="font-medium">
-                Drop or{' '}
-                <button
-                  type="button"
-                  onClick={handleBrowseClick}
-                  className="cursor-pointer underline underline-offset-2 hover:text-primary"
-                >
-                  browse your video
-                </button>
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                MP4 or MOV, Max duration: 120 min Max size: 10GB
-              </p>
-            </div>
-          </div>
-
-          {/* Hidden file input */}
-          <input
-            ref={fileInputRef}
-            type="file"
-            accept="video/mp4,video/quicktime,video/mov"
-            onChange={handleFileSelect}
-            className="hidden"
-          />
+              {/* Hidden file input */}
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="video/mp4,video/quicktime,video/mov"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+            </>
+          )}
         </div>
       </DialogContent>
     </Dialog>

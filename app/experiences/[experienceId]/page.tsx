@@ -25,6 +25,8 @@ export default async function ExperiencePage({
 
 	const premiumProductId = process.env.NEXT_PUBLIC_WHOP_PREMIUM_PRODUCT_ID;
 	const basicProductId = process.env.NEXT_PUBLIC_WHOP_PRODUCT_ID;
+	const basicCheckoutUrl = process.env.NEXT_PUBLIC_BASIC_CHECKOUT_URL;
+	const premiumCheckoutUrl = process.env.NEXT_PUBLIC_PREMIUM_CHECKOUT_URL;
 	if (!premiumProductId) {
 		throw new Error("NEXT_PUBLIC_WHOP_PREMIUM_PRODUCT_ID is not set");
 	}
@@ -60,8 +62,8 @@ export default async function ExperiencePage({
 
 			<QuickStartCards
 				hasAccess={productAccess.has_access}
-				basicCheckoutUrl="https://whop.com/checkout/plan_xtThkvdruzGaa"
-				premiumCheckoutUrl="https://whop.com/checkout/plan_OHjnjQ68gcbct"
+				basicCheckoutUrl={basicCheckoutUrl}
+				premiumCheckoutUrl={premiumCheckoutUrl}
 			/>
 			<RecentProjectsGallery experienceId={experienceId} />
 
