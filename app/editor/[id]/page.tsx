@@ -3,7 +3,7 @@
 import { Player, PlayerRef } from "@remotion/player";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useParams } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen } from "lucide-react";
 import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
@@ -222,8 +222,38 @@ const PRESET_STYLES: {
     preview: { bg: "#000", color: "#fff" },
     style: {
       fontFamily: "Anton",
-      fontSize: 72,
+      fontSize: 96,
       fontWeight: 400,
+      fontStyle: "normal",
+      textColor: "#ffffff",
+      backgroundColor: "transparent",
+      backgroundOpacity: 0,
+      strokeWidth: 0,
+      strokeColor: "#000000",
+      shadowColor: "#000000",
+      borderRadius: 4,
+      paddingX: 24,
+      paddingY: 12,
+      shadowBlur: 12,
+      shadowOpacity: 1,
+      shadowOffsetX: 0,
+      shadowOffsetY: 0,
+      animation: "pop",
+      positionY: 70,
+      uppercase: true,
+      lineHeight: 1.25,
+      wordSpacing: 0,
+    },
+    subtitleMode: "word",
+  },
+  {
+    id: "classic",
+    name: "Classic",
+    preview: { bg: "#facc15", color: "#000" },
+    style: {
+      fontFamily: "Montserrat",
+      fontSize: 52,
+      fontWeight: 900,
       fontStyle: "normal",
       textColor: "#ffffff",
       backgroundColor: "transparent",
@@ -244,28 +274,6 @@ const PRESET_STYLES: {
       lineHeight: 1.25,
       wordSpacing: 0,
     },
-    subtitleMode: "word",
-  },
-  {
-    id: "classic",
-    name: "Classic",
-    preview: { bg: "#facc15", color: "#000" },
-    style: {
-      fontFamily: "Poppins",
-      fontSize: 56,
-      fontWeight: 700,
-      textColor: "#ffffff",
-      backgroundColor: "#000000",
-      backgroundOpacity: 0,
-      strokeWidth: 0,
-      borderRadius: 4,
-      animation: "pop",
-      positionY: 70,
-      fontStyle: "italic",
-      lineHeight: 1.3,
-      wordSpacing: 0,
-      uppercase: true,
-    },
     subtitleMode: "segment-highlight",
     maxWordsPerSegment: 3,
     highlightColor: "#facc15",
@@ -275,19 +283,29 @@ const PRESET_STYLES: {
     name: "Neon",
     preview: { bg: "transparent", color: "#0ff" },
     style: {
-      fontFamily: "Rubik",
-      fontSize: 58,
-      fontWeight: 700,
-      textColor: "#00ffff",
+      fontFamily: "Montserrat",
+      fontSize: 64,
+      fontWeight: 900,
+      fontStyle: "normal",
+      textColor: "#ffffff",
       backgroundColor: "transparent",
       backgroundOpacity: 0,
       strokeWidth: 0,
+      strokeColor: "#000000",
       shadowColor: "#00ffff",
-      shadowBlur: 20,
+      borderRadius: 4,
+      paddingX: 24,
+      paddingY: 12,
+      shadowBlur: 12,
       shadowOpacity: 1,
       shadowOffsetX: 0,
       shadowOffsetY: 0,
-      animation: "none",
+      animation: "fade",
+      positionY: 80,
+      uppercase: true,
+      lineHeight: 1.25,
+      wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-highlight",
     maxWordsPerSegment: 3,
@@ -526,10 +544,10 @@ const PRESET_STYLES: {
 
 /** Default platform logos from Simple Icons CDN (SVG, free to use) */
 const PLATFORM_LOGO_URLS = {
-  instagram: "https://cdn.simpleicons.org/instagram/ffffff",
-  youtube: "https://cdn.simpleicons.org/youtube/ffffff",
-  twitch: "https://cdn.simpleicons.org/twitch/ffffff",
-  kick: "https://cdn.simpleicons.org/kick/ffffff",
+  instagram: "https://cdn.simpleicons.org/instagram/E1306C",
+  youtube: "https://cdn.simpleicons.org/youtube/FF0033",
+  twitch: "https://cdn.simpleicons.org/twitch/9146ff",
+  kick: "https://cdn.simpleicons.org/kick/53FC18",
 } as const;
 
 const BANNER_PRESETS: {
@@ -546,29 +564,29 @@ const BANNER_PRESETS: {
       layout: "horizontal",
       logoPosition: "left",
       spacing: 16,
-      logoWidth: 80,
-      logoHeight: 80,
+      logoWidth: 86,
+      logoHeight: 86,
       logoScale: 1.0,
       logoOpacity: 1.0,
       logoBorderRadius: 8,
       fontFamily: "Poppins",
       fontSize: 36,
-      fontWeight: 700,
+      fontWeight: 800,
       fontStyle: "normal",
-      textColor: "#ffffff",
+      textColor: "#000000",
       textTransform: "uppercase",
-      backgroundColor: "#E1306C",
-      backgroundOpacity: 0.9,
+      backgroundColor: "#ffffff",
+      backgroundOpacity: 1,
       borderRadius: 0,
       paddingX: 24,
       paddingY: 16,
       shadowColor: "#000000",
-      shadowBlur: 16,
-      shadowOpacity: 0.5,
+      shadowBlur: 0,
+      shadowOpacity: 0,
       shadowOffsetX: 0,
-      shadowOffsetY: 4,
+      shadowOffsetY: 0,
       position: "bottom-center",
-      positionY: 90,
+      positionY: 31,
       marginX: 0,
       marginY: 0,
       animation: "slide-up",
@@ -582,29 +600,29 @@ const BANNER_PRESETS: {
       layout: "horizontal",
       logoPosition: "left",
       spacing: 16,
-      logoWidth: 80,
-      logoHeight: 80,
+      logoWidth: 86,
+      logoHeight: 86,
       logoScale: 1.0,
       logoOpacity: 1.0,
       logoBorderRadius: 8,
       fontFamily: "Poppins",
       fontSize: 36,
-      fontWeight: 700,
+      fontWeight: 800,
       fontStyle: "normal",
-      textColor: "#ffffff",
+      textColor: "#000000",
       textTransform: "uppercase",
-      backgroundColor: "#000000",
-      backgroundOpacity: 0.85,
+      backgroundColor: "#ffffff",
+      backgroundOpacity: 1,
       borderRadius: 0,
-      paddingX: 24,
-      paddingY: 16,
+      paddingX: 12,
+      paddingY: 0,
       shadowColor: "#000000",
-      shadowBlur: 16,
-      shadowOpacity: 0.5,
+      shadowBlur: 0,
+      shadowOpacity: 0,
       shadowOffsetX: 0,
-      shadowOffsetY: 4,
+      shadowOffsetY: 0,
       position: "bottom-center",
-      positionY: 90,
+      positionY: 31,
       marginX: 0,
       marginY: 0,
       animation: "slide-up",
@@ -617,30 +635,30 @@ const BANNER_PRESETS: {
     style: {
       layout: "horizontal",
       logoPosition: "left",
-      spacing: 20,
-      logoWidth: 64,
-      logoHeight: 64,
+      spacing: 16,
+      logoWidth: 86,
+      logoHeight: 86,
       logoScale: 1.0,
       logoOpacity: 1.0,
       logoBorderRadius: 8,
       fontFamily: "Poppins",
-      fontSize: 24,
+      fontSize: 36,
       fontWeight: 800,
       fontStyle: "normal",
       textColor: "#ffffff",
       textTransform: "uppercase",
-      backgroundColor: "#9146ff",
-      backgroundOpacity: 0.9,
+      backgroundColor: "#000000",
+      backgroundOpacity: 1,
       borderRadius: 0,
       paddingX: 28,
-      paddingY: 18,
+      paddingY: 16,
       shadowColor: "#000000",
-      shadowBlur: 20,
-      shadowOpacity: 0.6,
+      shadowBlur: 0,
+      shadowOpacity: 0,
       shadowOffsetX: 0,
-      shadowOffsetY: 6,
+      shadowOffsetY: 0,
       position: "bottom-center",
-      positionY: 88,
+      positionY: 31,
       marginX: 0,
       marginY: 0,
       animation: "slide-up",
@@ -653,9 +671,9 @@ const BANNER_PRESETS: {
     style: {
       layout: "horizontal",
       logoPosition: "left",
-      spacing: 20,
-      logoWidth: 80,
-      logoHeight: 80,
+      spacing: 16,
+      logoWidth: 86,
+      logoHeight: 86,
       logoScale: 1.0,
       logoOpacity: 1.0,
       logoBorderRadius: 8,
@@ -663,20 +681,20 @@ const BANNER_PRESETS: {
       fontSize: 36,
       fontWeight: 800,
       fontStyle: "normal",
-      textColor: "#000000",
+      textColor: "#ffffff",
       textTransform: "uppercase",
-      backgroundColor: "#53FC19",
-      backgroundOpacity: 0.95,
+      backgroundColor: "#000000",
+      backgroundOpacity: 1,
       borderRadius: 0,
       paddingX: 28,
-      paddingY: 18,
+      paddingY: 16,
       shadowColor: "#000000",
-      shadowBlur: 16,
-      shadowOpacity: 0.5,
+      shadowBlur: 0,
+      shadowOpacity: 0,
       shadowOffsetX: 0,
-      shadowOffsetY: 4,
+      shadowOffsetY: 0,
       position: "bottom-center",
-      positionY: 90,
+      positionY: 31,
       marginX: 0,
       marginY: 0,
       animation: "slide-up",
@@ -887,8 +905,11 @@ export default function EditorPage() {
   ]);
   const [leftPanelWidth, setLeftPanelWidth] = useState(334);
   const [leftPanelCollapsed, setLeftPanelCollapsed] = useState(false);
+  const [bottomPanelHeight, setBottomPanelHeight] = useState(360);
   const [resizingPanel, setResizingPanel] = useState(false);
+  const [resizingBottomPanel, setResizingBottomPanel] = useState(false);
   const resizeStartRef = useRef<{ x: number; width: number } | null>(null);
+  const bottomResizeStartRef = useRef<{ y: number; height: number } | null>(null);
   const [selectedSubtitle, setSelectedSubtitle] = useState<string | null>(null);
   const [selectedVideoSegment, setSelectedVideoSegment] = useState<string | null>(null);
   const [videoSegments, setVideoSegments] = useState<VideoSegment[]>([]);
@@ -1522,6 +1543,58 @@ export default function EditorPage() {
     };
   }, [resizingPanel]);
 
+  const MIN_BOTTOM_PANEL = 200;
+  const handleBottomPanelResizeStart = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      e.preventDefault();
+      setResizingBottomPanel(true);
+      const y = "touches" in e ? e.touches[0].clientY : e.clientY;
+      bottomResizeStartRef.current = { y, height: bottomPanelHeight };
+    },
+    [bottomPanelHeight]
+  );
+
+  useEffect(() => {
+    if (!resizingBottomPanel) return;
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+    const getY = (e: MouseEvent | TouchEvent) =>
+      "touches" in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
+    const onMove = (e: MouseEvent | TouchEvent) => {
+      const start = bottomResizeStartRef.current;
+      if (!start) return;
+      const currentY = getY(e);
+      const delta = start.y - currentY;
+      const maxHeight = Math.floor(window.innerHeight * 0.5);
+      const nextHeight = Math.min(
+        maxHeight,
+        Math.max(MIN_BOTTOM_PANEL, start.height + delta)
+      );
+      setBottomPanelHeight(nextHeight);
+      bottomResizeStartRef.current = { y: currentY, height: nextHeight };
+    };
+    const onUp = () => {
+      setResizingBottomPanel(false);
+      bottomResizeStartRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+    window.addEventListener("touchcancel", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+      window.removeEventListener("touchcancel", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+    };
+  }, [resizingBottomPanel]);
+
   const formatTime = (frames: number) => {
     const seconds = frames / FPS;
     const mins = Math.floor(seconds / 60);
@@ -1800,14 +1873,15 @@ export default function EditorPage() {
       </header>
 
       {/* Main Content */}
-      <div className="flex min-h-0 flex-1">
+      <div className="flex min-h-0 flex-1 flex-col-reverse sm:flex-row">
         {/* Left Panel - Tabs: Styling & Subtitles (resizable, collapsible) */}
+		  
         <aside
           style={{
             width: leftPanelCollapsed ? 48 : leftPanelWidth,
             transition: "width 0.2s ease-out",
           }}
-          className="relative flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-r border-border"
+          className="relative hidden sm:flex min-h-0 flex-shrink-0 flex-col overflow-hidden border-r border-border"
         >
           {/* Collapse/expand toggle - always visible */}
           <Button
@@ -2125,7 +2199,7 @@ export default function EditorPage() {
                             <div className="space-y-2 flex-1 flex flex-col">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs text-muted-foreground">
-                                  Stroke Width
+                                  Width
                                 </span>
                                 <span className="text-xs text-muted-foreground">
                                   {style.strokeWidth}px
@@ -2208,7 +2282,7 @@ export default function EditorPage() {
                             <div className="space-y-4 flex-1">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs text-muted-foreground">
-                                  Word spacing
+                                  Spacing
                                 </span>
                                 <span className="text-xs text-muted-foreground">
                                   {style.wordSpacing ?? 0}px
@@ -2240,7 +2314,7 @@ export default function EditorPage() {
                             <div className="space-y-2 flex-1 flex flex-col">
                               <div className="flex items-center justify-between">
                                 <span className="text-xs text-muted-foreground">
-                                  Shadow Blur
+                                  Blur
                                 </span>
                                 <span className="text-muted-foreground">
                                   {style.shadowBlur}px
@@ -2635,7 +2709,7 @@ export default function EditorPage() {
                         playerRef.current?.seekTo(sub.startFrame);
                       }}
                       className={cn(
-                        "cursor-pointer rounded-lg border p-3 transition-colors hover:bg-secondary/80",
+                        "cursor-pointer rounded-lg border p-2 transition-colors hover:bg-secondary/80",
                         selectedSubtitle === sub.id
                           ? "border-primary bg-primary/30"
                           : "border-transparent bg-secondary"
@@ -3034,16 +3108,16 @@ export default function EditorPage() {
                       />
                       <Tabs defaultValue="font" className="w-full">
                         <TabsList className="grid w-full grid-cols-4 h-9 mb-3">
-                          <TabsTrigger value="font">
+                          <TabsTrigger value="font" style={{ justifyContent: "center" }}>
                             <Type className="size-4" />
                           </TabsTrigger>
-                          <TabsTrigger value="colors">
+                          <TabsTrigger value="colors" style={{ justifyContent: "center" }}>
                             <Highlighter className="size-4" />
                           </TabsTrigger>
-                          <TabsTrigger value="position">
+                          <TabsTrigger value="position" style={{ justifyContent: "center" }}>
                             <SquareCenterlineDashedVerticalIcon className="size-4" />
                           </TabsTrigger>
-                          <TabsTrigger value="animation">
+                          <TabsTrigger value="animation" style={{ justifyContent: "center" }}>
                             <WandSparkles className="size-4" />
                           </TabsTrigger>
                         </TabsList>
@@ -3520,17 +3594,11 @@ export default function EditorPage() {
                 className="mt-0 outline-none p-4 overflow-auto"
               >
                 <Label className="mb-2 text-muted-foreground">
-                  Branded Banners
+                  Social Banners
                 </Label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  Add branded call-to-action banners (logo + text) at specific times. Perfect for YouTube, Twitch, Kick, or custom branding.
-                </p>
 
                 {bannerTracks.length === 0 && (
                   <div className="space-y-3 mb-4">
-                    <Label className="mb-2 text-muted-foreground">
-                      Choose a banner style
-                    </Label>
                     <div className="grid grid-cols-1 gap-2">
                       {BANNER_PRESETS.map((preset) => (
                         <Button
@@ -4139,8 +4207,2344 @@ export default function EditorPage() {
           )}
         </aside>
 
+		  <aside
+          style={{
+            height: leftPanelCollapsed ? 48 : bottomPanelHeight,
+            maxHeight: leftPanelCollapsed ? 48 : "50vh",
+            transition: "height 0.2s ease-out",
+          }}
+          className="relative flex sm:hidden min-h-0 flex-shrink-0 flex-col overflow-hidden border-r border-border"
+        >
+          {/* Collapse/expand toggle - always visible */}
+          <Button
+            variant="ghost"
+            size="icon"
+            className={cn(
+              "absolute top-2 z-20 shrink-0",
+              leftPanelCollapsed ? "left-1 right-1" : "left-1"
+            )}
+            onClick={() => setLeftPanelCollapsed((c) => !c)}
+            title={leftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+            aria-label={leftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
+          >
+            {leftPanelCollapsed ? (
+              <PanelBottomOpen key="open" className="size-4" />
+            ) : (
+              <PanelBottomClose key="close" className="size-4" />
+            )}
+          </Button>
+
+          {!leftPanelCollapsed && (
+            <>
+          <Tabs
+            value={leftPanelTab}
+            onValueChange={(v) => setLeftPanelTab(v as "styling" | "subtitles" | "text")}
+            className="flex flex-1 flex-col-reverse overflow-hidden pt-10"
+				style={{flexDirection: "column-reverse"}}
+            orientation="horizontal"
+				activationMode="manual"
+          >
+            <TabsList variant="line" className="shrink-0 gap-4 w-full">
+              <TabsTrigger value="styling" className="border-none">
+                <Palette className="size-6" />
+              </TabsTrigger>
+              <TabsTrigger value="subtitles" className="border-none">
+                <Captions className="size-6" />
+              </TabsTrigger>
+              <TabsTrigger value="text" className="border-none">
+                <Type className="size-6" />
+              </TabsTrigger>
+              <TabsTrigger value="banners" className="border-none">
+                <Award className="size-6" />
+              </TabsTrigger>
+            </TabsList>
+            <div className="relative flex-1 flex min-h-0 flex-col">
+              <TabsContent
+                value="styling"
+                className="mt-0 flex flex-1 min-h-0 flex-col outline-none p-4 gap-4"
+              >
+                <Button
+                  variant="outline"
+                  className="self-end"
+                  onClick={() => setCustomizePanelOpen(true)}
+                >
+                  <Pencil className="size-4" />
+                  Customize{" "}
+                  {activePreset
+                    ? (PRESET_STYLES.find((p) => p.id === activePreset)?.name ??
+                      "style")
+                    : "style"}
+                </Button>
+                {/* Presets + Customize button (visible when panel closed) */}
+                <div className="flex-1 min-h-0 overflow-y-auto">
+                  <div className="mb-4">
+                    <Label className="mb-2 text-muted-foreground">
+                      Style Presets
+                    </Label>
+                    <div className="grid md:grid-cols-2 grid-cols-1 gap-2">
+                      {PRESET_STYLES.map((preset) => (
+                        <Button
+                          key={preset.id}
+                          onClick={() => applyPreset(preset)}
+                          variant="preset"
+                          className="p-6"
+                        >
+                          <div
+                            className="rounded px-2 py-1 text-xs font-bold"
+                            style={{
+                              color: preset.preview.color,
+                              backgroundColor: preset.preview.bg,
+                              textShadow: preset.preview.stroke
+                                ? `1px 1px 0 ${preset.preview.stroke}, -1px -1px 0 ${preset.preview.stroke}, 1px -1px 0 ${preset.preview.stroke}, -1px 1px 0 ${preset.preview.stroke}`
+                                : "none",
+                            }}
+                          >
+                            {preset.name}
+                          </div>
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Sliding Customize panel (overlays presets, slides in from right) */}
+                <div
+                  className={cn(
+                    "absolute inset-0 overflow-hidden transition-[visibility] duration-300",
+                    !customizePanelOpen && "pointer-events-none"
+                  )}
+                  aria-hidden={!customizePanelOpen}
+                >
+                  <div
+                    className={cn(
+                      "absolute inset-0 bg-background shadow-lg transition-transform duration-300 ease-out",
+                      customizePanelOpen ? "translate-x-0" : "translate-x-full"
+                    )}
+                  >
+                    <div className="flex h-full flex-col overflow-y-auto p-4">
+                      <div className="mb-4 flex items-center justify-between">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setCustomizePanelOpen(false)}
+                          className="-ml-2"
+                        >
+                          <ArrowLeft className="mr-2 size-4" />
+                          Back
+                        </Button>
+                      </div>
+
+                      <Tabs defaultValue="font" className="w-full">
+                        <TabsList
+                          variant="line"
+                          className="grid w-full grid-cols-4 h-9 mb-3"
+                        >
+                          <TabsTrigger value="font" className="border-none" style={{ justifyContent: "center" }}>
+                            <Type className="size-4" />
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="background"
+                            className="border-none"
+                            style={{ justifyContent: "center" }}
+                          >
+                            <Highlighter
+                              className="size-4"
+                            />
+                          </TabsTrigger>
+                          <TabsTrigger
+                            value="alignment"
+                            className="border-none"
+                            style={{ justifyContent: "center" }}
+                          >
+                            <SquareCenterlineDashedVerticalIcon
+                              className="size-4"
+                            />
+                          </TabsTrigger>
+                          <TabsTrigger value="effects" className="border-none" style={{ justifyContent: "center" }}>
+                            <WandSparkles className="size-4" />
+                          </TabsTrigger>
+                        </TabsList>
+
+                        <TabsContent value="font" className="mt-0 space-y-4">
+                          <div className="flex gap-4 mb-4">
+                            <div className="space-y-2 flex-1">
+                              <Label className="text-xs text-muted-foreground">
+                                Font family
+                              </Label>
+                              <Select
+                                value={
+                                  style.fontFamily === SYSTEM_FONT
+                                    ? SYSTEM_FONT
+                                    : style.fontFamily
+                                }
+                                onValueChange={async (value) => {
+                                  if (value === SYSTEM_FONT) {
+                                    setAvailableWeights(ALL_FONT_WEIGHTS);
+                                    updateStyle("fontFamily", SYSTEM_FONT);
+                                    return;
+                                  }
+                                  const entry = FONTS_LIST.find(
+                                    (f) => f.family === value
+                                  );
+                                  if (!entry) return;
+                                  if (!entry.load) {
+                                    setAvailableWeights(ALL_FONT_WEIGHTS);
+                                    updateStyle("fontFamily", entry.family);
+                                    return;
+                                  }
+                                  try {
+                                    const mod = await entry.load();
+                                    const info = mod.getInfo?.();
+                                    const weights = info
+                                      ? getWeightsFromFontInfo(info)
+                                      : [400, 700];
+                                    if (weights.length > 0) {
+                                      setAvailableWeights(weights);
+                                    }
+                                    const weightToLoad =
+                                      weights.length > 0 &&
+                                      weights.includes(style.fontWeight)
+                                        ? style.fontWeight
+                                        : (weights[0] ?? 400);
+                                    if (
+                                      weights.length > 0 &&
+                                      !weights.includes(style.fontWeight)
+                                    ) {
+                                      updateStyle("fontWeight", weightToLoad);
+                                    }
+                                    const result = mod.loadFont?.("normal", {
+                                      weights: [String(weightToLoad)],
+                                      subsets: ["latin"],
+                                    });
+                                    if (!result) {
+                                      const fallback =
+                                        info?.fontFamily ??
+                                        (mod as { fontFamily?: string })
+                                          .fontFamily;
+                                      if (fallback)
+                                        updateStyle("fontFamily", fallback);
+                                      return;
+                                    }
+                                    updateStyle(
+                                      "fontFamily",
+                                      result.fontFamily
+                                    );
+                                    await result.waitUntilDone?.();
+                                  } catch (e) {
+                                    console.warn("Failed to load font:", e);
+                                  }
+                                }}
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue>
+                                    {getFontDisplayName(style.fontFamily)}
+                                  </SelectValue>
+                                </SelectTrigger>
+                                <SelectContent>
+                                  <SelectItem value={SYSTEM_FONT}>
+                                    System
+                                  </SelectItem>
+                                  {FONTS_LIST.map((f) => (
+                                    <SelectItem
+                                      key={f.family}
+                                      value={f.family}
+                                      style={{ fontFamily: f.family }}
+                                    >
+                                      {f.family}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+
+                            <div className="space-y-2 flex-1">
+                              <Label className="text-xs text-muted-foreground">
+                                Font weight
+                              </Label>
+                              <Select
+                                value={String(
+                                  availableWeights.includes(style.fontWeight)
+                                    ? style.fontWeight
+                                    : (availableWeights[0] ?? 400)
+                                )}
+                                onValueChange={(v) =>
+                                  updateStyle("fontWeight", Number(v))
+                                }
+                              >
+                                <SelectTrigger className="w-full">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {availableWeights.map((w) => (
+                                    <SelectItem key={w} value={String(w)}>
+                                      {String(w)}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-4 mb-4">
+                            <div className="space-y-1 flex-1 flex flex-col">
+                              <span className="text-xs text-muted-foreground">
+                                Font Color
+                              </span>
+                              <ColorPickerInput
+                                value={style.textColor}
+                                onChange={(v) => updateStyle("textColor", v)}
+                                className="w-full"
+                              />
+                            </div>
+                            <div className="space-y-1 flex-1 flex flex-col">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                  Size
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {style.fontSize}px
+                                </span>
+                              </div>
+                              <div className="h-full content-center flex">
+                                <Slider
+                                  value={[style.fontSize]}
+                                  onValueChange={([v]) =>
+                                    updateStyle("fontSize", v)
+                                  }
+                                  min={32}
+                                  max={96}
+                                  step={1}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-4 mb-4">
+                            <div className="space-y-1 flex-1 flex flex-col">
+                              <span className="text-xs text-muted-foreground">
+                                Stroke
+                              </span>
+                              <ColorPickerInput
+                                value={style.strokeColor}
+                                onChange={(v) => updateStyle("strokeColor", v)}
+                                className="w-full"
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1 flex flex-col">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                  Width
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {style.strokeWidth}px
+                                </span>
+                              </div>
+                              <div className="h-full content-center flex">
+                                <Slider
+                                  value={[style.strokeWidth]}
+                                  onValueChange={([v]) =>
+                                    updateStyle("strokeWidth", v)
+                                  }
+                                  min={0}
+                                  max={6}
+                                  step={1}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-4	mb-4">
+                            <div className="flex flex-col flex-1 justify-between gap-3">
+                              <div>
+                                <Label className="text-xs text-muted-foreground">
+                                  Italic
+                                </Label>
+                                <p className="text-[10px] text-muted-foreground/80">
+                                  Use italic text
+                                </p>
+                              </div>
+                              <Switch
+                                checked={style.fontStyle === "italic"}
+                                onCheckedChange={(checked: boolean) =>
+                                  updateStyle(
+                                    "fontStyle",
+                                    checked ? "italic" : "normal"
+                                  )
+                                }
+                              />
+                            </div>
+
+                            <div className="flex flex-col flex-1 justify-between gap-3">
+                              <div>
+                                <Label className="text-xs text-muted-foreground">
+                                  Uppercase
+                                </Label>
+                                <p className="text-[10px] text-muted-foreground/80">
+                                  Display all subtitles in uppercase
+                                </p>
+                              </div>
+                              <Switch
+                                checked={style.uppercase ?? false}
+                                onCheckedChange={(checked: boolean) =>
+                                  updateStyle("uppercase", checked)
+                                }
+                              />
+                            </div>
+                          </div>
+
+                          <div className="flex gap-4 mb-4">
+                            <div className="space-y-4 flex-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                  Line height
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {style.lineHeight ?? 1.2}
+                                </span>
+                              </div>
+                              <Slider
+                                value={[style.lineHeight ?? 1.2]}
+                                onValueChange={([v]) =>
+                                  updateStyle("lineHeight", v)
+                                }
+                                min={0.8}
+                                max={2.5}
+                                step={0.1}
+                              />
+                            </div>
+
+                            <div className="space-y-4 flex-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                  Spacing
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {style.wordSpacing ?? 0}px
+                                </span>
+                              </div>
+                              <Slider
+                                value={[style.wordSpacing ?? 0]}
+                                onValueChange={([v]) =>
+                                  updateStyle("wordSpacing", v)
+                                }
+                                min={-16}
+                                max={20}
+                                step={1}
+                              />
+                            </div>
+                          </div>
+
+								  <div className="flex gap-4 mb-4">
+                            <div className="space-y-1 flex-1 flex flex-col">
+                              <span className="text-xs text-muted-foreground">
+                                Shadow Color
+                              </span>
+                              <ColorPickerInput
+                                value={style.shadowColor}
+                                onChange={(v) => updateStyle("shadowColor", v)}
+                                className="w-full"
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1 flex flex-col">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                  Blur
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {style.shadowBlur}px
+                                </span>
+                              </div>
+                              <div className="h-full content-center flex">
+                                <Slider
+                                  value={[style.shadowBlur]}
+                                  onValueChange={([v]) =>
+                                    updateStyle("shadowBlur", v)
+                                  }
+                                  min={0}
+                                  max={40}
+                                  step={2}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="mb-4 space-y-2">
+                            <div className="space-y-3">
+                              <div className="flex items-center justify-between text-[10px]">
+                                <span className="text-muted-foreground">
+                                  Opacity
+                                </span>
+                                <span className="text-muted-foreground">
+                                  {Math.round((style.shadowOpacity ?? 1) * 100)}
+                                  %
+                                </span>
+                              </div>
+                              <Slider
+                                value={[(style.shadowOpacity ?? 1) * 100]}
+                                onValueChange={([v]) =>
+                                  updateStyle("shadowOpacity", v / 100)
+                                }
+                                min={0}
+                                max={100}
+                                step={5}
+                              />
+                              <p className="text-[10px] text-muted-foreground/80">
+                                At 0% the shadow is off (same as no shadow).
+                              </p>
+                              <div className="grid grid-cols-2 gap-2">
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                                    <span>Offset X</span>
+                                    <span>{style.shadowOffsetX}px</span>
+                                  </div>
+                                  <Slider
+                                    value={[style.shadowOffsetX]}
+                                    onValueChange={([v]) =>
+                                      updateStyle("shadowOffsetX", v)
+                                    }
+                                    min={-20}
+                                    max={20}
+                                    step={1}
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <div className="flex justify-between text-[10px] text-muted-foreground">
+                                    <span>Offset Y</span>
+                                    <span>{style.shadowOffsetY}px</span>
+                                  </div>
+                                  <Slider
+                                    value={[style.shadowOffsetY]}
+                                    onValueChange={([v]) =>
+                                      updateStyle("shadowOffsetY", v)
+                                    }
+                                    min={-20}
+                                    max={20}
+                                    step={1}
+                                  />
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent
+                          value="background"
+                          className="mt-0 space-y-4"
+                        >
+                          <div className="flex gap-4 mb-4">
+                            <div className="space-y-1 flex-1 flex flex-col">
+                              <span className="text-xs text-muted-foreground">
+                                Background
+                              </span>
+                              <ColorPickerInput
+                                value={style.backgroundColor}
+                                onChange={(v) =>
+                                  updateStyle("backgroundColor", v)
+                                }
+                                className="w-full"
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1 flex flex-col">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                  Opacity
+                                </span>
+                                <span className="text-xs text-muted-foreground">
+                                  {Math.round(style.backgroundOpacity * 100)}%
+                                </span>
+                              </div>
+                              <div className="h-full content-center flex">
+                                <Slider
+                                  value={[style.backgroundOpacity * 100]}
+                                  onValueChange={([v]) =>
+                                    updateStyle("backgroundOpacity", v / 100)
+                                  }
+                                  min={0}
+                                  max={100}
+                                  step={5}
+                                />
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="flex gap-4">
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Width (padding)</span>
+                                <span>{style.paddingX}px</span>
+                              </div>
+                              <Slider
+                                value={[style.paddingX]}
+                                onValueChange={([v]) =>
+                                  updateStyle("paddingX", v)
+                                }
+                                min={0}
+                                max={48}
+                                step={2}
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Height (padding)</span>
+                                <span>{style.paddingY}px</span>
+                              </div>
+                              <Slider
+                                value={[style.paddingY]}
+                                onValueChange={([v]) =>
+                                  updateStyle("paddingY", v)
+                                }
+                                min={0}
+                                max={32}
+                                step={2}
+                              />
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">
+                                Border radius
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {style.borderRadius}px
+                              </span>
+                            </div>
+                            <Slider
+                              value={[style.borderRadius]}
+                              onValueChange={([v]) =>
+                                updateStyle("borderRadius", v)
+                              }
+                              min={0}
+                              max={24}
+                              step={1}
+                            />
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent
+                          value="alignment"
+                          className="mt-0 space-y-4"
+                        >
+                          <div className="mb-4 space-y-2">
+                            <Label className="text-xs text-muted-foreground">
+                              Position
+                            </Label>
+                            <div className="flex gap-1">
+                              {(
+                                [
+                                  { pos: "top" as const, positionY: 10 },
+                                  { pos: "center" as const, positionY: 50 },
+                                  { pos: "bottom" as const, positionY: 90 },
+                                ] as const
+                              ).map(({ pos, positionY }) => (
+                                <Button
+                                  key={pos}
+                                  variant={
+                                    style.position === pos &&
+                                    (style.positionY ?? 85) === positionY
+                                      ? "default"
+                                      : "secondary"
+                                  }
+                                  size="sm"
+                                  onClick={() => {
+                                    updateStyle("position", pos);
+                                    updateStyle("positionY", positionY);
+                                  }}
+                                  className="flex-1 capitalize"
+                                >
+                                  {pos}
+                                </Button>
+                              ))}
+                            </div>
+                            <div className="mt-2 space-y-1">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs text-muted-foreground">
+                                  Vertical
+                                </span>
+                              </div>
+                              <Slider
+                                value={[style.positionY ?? 85]}
+                                onValueChange={([v]) =>
+                                  updateStyle("positionY", v)
+                                }
+                                min={5}
+                                max={95}
+                                step={1}
+                              />
+                            </div>
+                          </div>
+                          <div className="mb-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">
+                                Side margin
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {style.containerMarginX ?? 40}px
+                              </span>
+                            </div>
+                            <Slider
+                              value={[style.containerMarginX ?? 40]}
+                              onValueChange={([v]) =>
+                                updateStyle("containerMarginX", v)
+                              }
+                              min={24}
+                              max={200}
+                              step={4}
+                            />
+                            <p className="text-[10px] text-muted-foreground/80">
+                              Left/right margin. Larger = narrower text = more
+                              wrapping to two lines.
+                            </p>
+                          </div>
+                        </TabsContent>
+
+                        <TabsContent value="effects" className="mt-0 space-y-4">
+
+                          <div className="mb-4 space-y-2">
+                            <Label className="text-xs text-muted-foreground">
+                              Animation
+                            </Label>
+                            <Select
+                              value={style.animation}
+                              onValueChange={(v) =>
+                                updateStyle(
+                                  "animation",
+                                  v as SubtitleStyle["animation"]
+                                )
+                              }
+                            >
+                              <SelectTrigger className="w-full">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                <SelectItem value="fade">Fade</SelectItem>
+                                <SelectItem value="pop">Pop</SelectItem>
+                                <SelectItem value="slide">Slide</SelectItem>
+                                <SelectItem value="typewriter">
+                                  Typewriter
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </TabsContent>
+                      </Tabs>
+
+                      <div className="mt-4 border-t border-border pt-4">
+                        <Label className="mb-3 text-muted-foreground">
+                          Subtitle Mode
+                        </Label>
+
+                        <div className="mb-4 space-y-2">
+                          <Select
+                            value={subtitleMode}
+                            onValueChange={(v) => {
+                              const mode = v as SubtitleMode;
+                              setSubtitleMode(mode);
+                              if (mode === "word") {
+                                if (wordSubtitles.length > 0)
+                                  setSubtitles(wordSubtitles);
+                              } else {
+                                if (segmentSubtitles.length > 0)
+                                  setSubtitles(segmentSubtitles);
+                              }
+                            }}
+                          >
+                            <SelectTrigger className="w-full">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="word">Word by Word</SelectItem>
+                              <SelectItem value="segment">
+                                Full Sentences
+                              </SelectItem>
+                              <SelectItem value="segment-highlight">
+                                Sentences + Highlight
+                              </SelectItem>
+                              <SelectItem value="segment-background-highlight">
+                                Sentences + Background Highlight
+                              </SelectItem>
+                            </SelectContent>
+                          </Select>
+                          <p className="text-[10px] text-muted-foreground">
+                            {subtitleMode === "word" &&
+                              "One word at a time (TikTok style)"}
+                            {subtitleMode === "segment" &&
+                              "Full sentences/phrases"}
+                            {subtitleMode === "segment-highlight" &&
+                              "Karaoke-style word highlighting"}
+                            {subtitleMode === "segment-background-highlight" &&
+                              "Active word in a colored background box"}
+                          </p>
+                          <p className="text-[10px] text-muted-foreground/60">
+                            Words: {wordSubtitles.length} | Segments:{" "}
+                            {segmentSubtitles.length}
+                          </p>
+                        </div>
+
+                        {(subtitleMode === "segment-highlight" ||
+                          subtitleMode === "segment-background-highlight") && (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-3">
+                              <span className="text-xs text-muted-foreground">
+                                Highlight Color
+                              </span>
+                              <ColorPickerInput
+                                value={highlightColor}
+                                onChange={setHighlightColor}
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {subtitleMode !== "word" && (
+                          <div className="mt-4 space-y-2">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs text-muted-foreground">
+                                Max Words Per Line
+                              </span>
+                              <span className="text-xs text-muted-foreground">
+                                {maxWordsPerSegment}
+                              </span>
+                            </div>
+                            <Slider
+                              value={[maxWordsPerSegment]}
+                              onValueChange={([v]) => setMaxWordsPerSegment(v)}
+                              min={3}
+                              max={15}
+                              step={1}
+                            />
+                            <p className="text-[10px] text-muted-foreground/60">
+                              Splits long segments into smaller chunks
+                            </p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </TabsContent>
+
+              <TabsContent
+                value="subtitles"
+                className="mt-0 outline-none p-4 overflow-auto"
+              >
+                <Label className="mb-2 text-muted-foreground">
+                  Subtitles ({subtitles.length})
+                </Label>
+
+                <div className="flex flex-col gap-2">
+                  {subtitles.map((sub, i) => (
+                    <div
+                      key={sub.id}
+                      data-subtitle-id={sub.id}
+                      onClick={() => {
+                        setSelectedSubtitle(sub.id);
+                        playerRef.current?.seekTo(sub.startFrame);
+                      }}
+                      className={cn(
+                        "cursor-pointer rounded-lg border p-2 transition-colors hover:bg-secondary/80",
+                        selectedSubtitle === sub.id
+                          ? "border-primary bg-primary/30"
+                          : "border-transparent bg-secondary"
+                      )}
+                    >
+                      <div className="mb-2 flex items-center justify-between">
+                        <span
+                          className="text-[10px] font-semibold"
+                          style={{
+                            color: SUBTITLE_COLORS[i % SUBTITLE_COLORS.length],
+                          }}
+                        >
+                          {formatTime(sub.startFrame)} -{" "}
+                          {formatTime(sub.endFrame)}
+                        </span>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="size-6"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeSubtitle(sub.id);
+                          }}
+                        >
+                          <X className="size-3" />
+                        </Button>
+                      </div>
+                      <textarea
+                        value={sub.text}
+                        onChange={(e) =>
+                          updateSubtitle(sub.id, { text: e.target.value })
+                        }
+                        onClick={(e) => e.stopPropagation()}
+                        rows={2}
+                        className="w-full min-h-[4rem] resize-y rounded-md border border-input bg-background px-3 py-2 text-sm shadow-xs transition-[color,box-shadow] outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50"
+                        placeholder="Subtitle text (press Enter for line break)"
+                      />
+                    </div>
+                  ))}
+                </div>
+
+                <Button
+                  variant="outline"
+                  className="mt-3 w-full border-dashed"
+                  onClick={() => {
+                    const lastEnd =
+                      subtitles.length > 0
+                        ? subtitles[subtitles.length - 1].endFrame
+                        : 0;
+                    setSubtitles((prev) => [
+                      ...prev,
+                      {
+                        id: Date.now().toString(),
+                        text: "New subtitle",
+                        startFrame: Math.min(lastEnd + 15, videoDuration - 60),
+                        endFrame: Math.min(lastEnd + 75, videoDuration),
+                      },
+                    ]);
+                  }}
+                >
+                  <Plus className="mr-2 size-4" />
+                  Add Subtitle
+                </Button>
+              </TabsContent>
+
+              <TabsContent
+                value="text"
+                className="mt-0 outline-none p-4 overflow-auto"
+              >
+                <Label className="mb-2 text-muted-foreground">
+                  Custom Text Overlays
+                </Label>
+
+                {/* Quick add when no tracks */}
+                {customTextTracks.length === 0 && (
+                  <Button
+                    variant="default"
+                    className="w-full mb-4 border-dashed"
+                    onClick={() => {
+                      const frame = playerRef.current?.getCurrentFrame() ?? 0;
+                      const newTrack: CustomTextTrack = {
+                        id: `text-track-${Date.now()}`,
+                        name: `Text 1`,
+                        visible: true,
+                        color: TEXT_TRACK_COLORS[0],
+                      };
+                      const newSegment: CustomTextSegment = {
+                        id: `text-seg-${Date.now()}`,
+                        trackId: newTrack.id,
+                        text: "Your text here",
+                        startFrame: Math.min(frame, compositionDuration - 60),
+                        endFrame: Math.min(frame + 90, compositionDuration),
+                        style: { ...DEFAULT_CUSTOM_TEXT_STYLE },
+                      };
+                      setCustomTextTracks((prev) => [...prev, newTrack]);
+                      setCustomTextSegments((prev) => [...prev, newSegment]);
+                      setSelectedTextSegment(newSegment.id);
+                      playerRef.current?.seekTo(newSegment.startFrame);
+                    }}
+                  >
+                    <Plus className="mr-2 size-4" />
+                    Add text overlay
+                  </Button>
+                )}
+
+                {/* Tracks with nested segments - collapsible */}
+                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+                  {customTextTracks.map((track) => {
+                    const segments = customTextSegments.filter(
+                      (s) => s.trackId === track.id
+                    );
+                    const isExpanded = !collapsedTextTrackIds.has(track.id);
+                    return (
+                      <div
+                        key={track.id}
+                        className="rounded-lg border border-border bg-secondary/30 overflow-hidden"
+                      >
+                        <div className="flex items-center gap-1.5 p-2 pr-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={() =>
+                              setCollapsedTextTrackIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(track.id)) next.delete(track.id);
+                                else next.add(track.id);
+                                return next;
+                              })
+                            }
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="size-3.5" />
+                            ) : (
+                              <ChevronRight className="size-3.5" />
+                            )}
+                          </Button>
+                          <span
+                            className="shrink-0 w-2 h-2 rounded-full"
+                            style={{ backgroundColor: track.color }}
+                          />
+                          <span className="text-xs font-medium truncate flex-1">
+                            {track.name}
+                          </span>
+                          <Switch
+                            checked={track.visible}
+                            onCheckedChange={(visible) =>
+                              setCustomTextTracks((prev) =>
+                                prev.map((t) =>
+                                  t.id === track.id ? { ...t, visible } : t
+                                )
+                              )
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 px-1.5 text-xs"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              const frame =
+                                playerRef.current?.getCurrentFrame() ?? 0;
+                              const newSegment: CustomTextSegment = {
+                                id: `text-seg-${Date.now()}`,
+                                trackId: track.id,
+                                text: "Your text here",
+                                startFrame: Math.min(
+                                  frame,
+                                  compositionDuration - 60
+                                ),
+                                endFrame: Math.min(
+                                  frame + 90,
+                                  compositionDuration
+                                ),
+                                style: { ...DEFAULT_CUSTOM_TEXT_STYLE },
+                              };
+                              setCustomTextSegments((prev) => [
+                                ...prev,
+                                newSegment,
+                              ]);
+                              setSelectedTextSegment(newSegment.id);
+                              playerRef.current?.seekTo(newSegment.startFrame);
+                              setCollapsedTextTrackIds((prev) => {
+                                const next = new Set(prev);
+                                next.delete(track.id);
+                                return next;
+                              });
+                            }}
+                          >
+                            <Plus className="size-3 mr-0.5" />
+                            Add
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setCustomTextTracks((prev) =>
+                                prev.filter((t) => t.id !== track.id)
+                              );
+                              setCustomTextSegments((prev) =>
+                                prev.filter((s) => s.trackId !== track.id)
+                              );
+                              if (
+                                customTextSegments.some(
+                                  (s) =>
+                                    s.id === selectedTextSegment &&
+                                    s.trackId === track.id
+                                )
+                              ) {
+                                setSelectedTextSegment(null);
+                              }
+                            }}
+                          >
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                        {isExpanded && (
+                          <div className="border-t border-border/50 px-2 pb-2 pt-1.5 space-y-1">
+                            {segments.length === 0 ? (
+                              <p className="text-[10px] text-muted-foreground py-1 px-2">
+                                No segments — click Add
+                              </p>
+                            ) : (
+                              segments.map((seg) => (
+                                <div
+                                  key={seg.id}
+                                  data-text-segment-id={seg.id}
+                                  onClick={() => {
+                                    setSelectedTextSegment(seg.id);
+                                    playerRef.current?.seekTo(seg.startFrame);
+                                  }}
+                                  className={cn(
+                                    "flex items-center gap-2 rounded-md border p-2 cursor-pointer transition-colors",
+                                    selectedTextSegment === seg.id
+                                      ? "border-primary bg-primary/10"
+                                      : "border-border/50 bg-muted/30 hover:bg-muted/50"
+                                  )}
+                                >
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium truncate">
+                                      {seg.text || "Empty"}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      {formatTime(seg.startFrame)} -{" "}
+                                      {formatTime(seg.endFrame)}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {customTextTracks.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mb-4 border-dashed"
+                    onClick={() => {
+                      const newTrack: CustomTextTrack = {
+                        id: `text-track-${Date.now()}`,
+                        name: `Text ${customTextTracks.length + 1}`,
+                        visible: true,
+                        color:
+                          TEXT_TRACK_COLORS[
+                            customTextTracks.length % TEXT_TRACK_COLORS.length
+                          ],
+                      };
+                      setCustomTextTracks((prev) => [...prev, newTrack]);
+                      setCollapsedTextTrackIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(newTrack.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    <Plus className="mr-2 size-4" />
+                    Add track
+                  </Button>
+                )}
+
+                {customTextTracks.length > 0 && customTextSegments.length === 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-dashed"
+                    onClick={() => {
+                      const track = customTextTracks[0];
+                      if (!track) return;
+                      const frame =
+                        playerRef.current?.getCurrentFrame() ?? 0;
+                      const newSegment: CustomTextSegment = {
+                        id: `text-seg-${Date.now()}`,
+                        trackId: track.id,
+                        text: "Your text here",
+                        startFrame: Math.min(frame, compositionDuration - 60),
+                        endFrame: Math.min(frame + 90, compositionDuration),
+                        style: { ...DEFAULT_CUSTOM_TEXT_STYLE },
+                      };
+                      setCustomTextSegments((prev) => [...prev, newSegment]);
+                      setSelectedTextSegment(newSegment.id);
+                      playerRef.current?.seekTo(newSegment.startFrame);
+                    }}
+                  >
+                    <Plus className="mr-2 size-4" />
+                    Add first segment at playhead
+                  </Button>
+                )}
+
+                {/* Selected segment editor */}
+                {selectedTextSegment && (() => {
+                  const seg = customTextSegments.find(
+                    (s) => s.id === selectedTextSegment
+                  );
+                  if (!seg) return null;
+                  return (
+                    <div className="space-y-4 border-t border-border pt-4 mt-4">
+                      <div className="flex items-center justify-between">
+                        <Label className="text-muted-foreground">
+                          Edit selected segment
+                        </Label>
+                        <div className="flex items-center gap-1">
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="text-xs h-7"
+                            onClick={() => {
+                              updateTextSegment(selectedTextSegment, {
+                                style: {
+                                  fontFamily: style.fontFamily,
+                                  fontSize: style.fontSize,
+                                  fontWeight: style.fontWeight,
+                                  fontStyle: style.fontStyle,
+                                  lineHeight: style.lineHeight,
+                                  textColor: style.textColor,
+                                  strokeColor: style.strokeColor,
+                                  strokeWidth: style.strokeWidth,
+                                  shadowColor: style.shadowColor,
+                                  shadowBlur: style.shadowBlur,
+                                  shadowOpacity: style.shadowOpacity,
+                                  shadowOffsetX: style.shadowOffsetX,
+                                  shadowOffsetY: style.shadowOffsetY,
+                                  backgroundColor: style.backgroundColor,
+                                  backgroundOpacity: style.backgroundOpacity,
+                                  borderRadius: style.borderRadius,
+                                  paddingX: style.paddingX,
+                                  paddingY: style.paddingY,
+                                  containerMarginX: style.containerMarginX,
+                                  position: style.position,
+                                  positionY: style.positionY,
+                                  animation: style.animation,
+                                  uppercase: style.uppercase,
+                                },
+                              });
+                            }}
+                          >
+                            Copy from subtitles
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-6"
+                            onClick={() => {
+                              setCustomTextSegments((prev) =>
+                                prev.filter((s) => s.id !== selectedTextSegment)
+                              );
+                              setSelectedTextSegment(null);
+                            }}
+                          >
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                      </div>
+                      <div className="text-xs text-muted-foreground">
+                        {formatTime(seg.startFrame)} - {formatTime(seg.endFrame)}
+                        {" · "}
+                        Drag on timeline to change
+                      </div>
+                      <textarea
+                        value={seg.text}
+                        onChange={(e) =>
+                          updateTextSegment(selectedTextSegment, {
+                            text: e.target.value,
+                          })
+                        }
+                        rows={3}
+                        className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        placeholder="Enter your text"
+                      />
+                      <Tabs defaultValue="font" className="w-full">
+                        <TabsList className="grid w-full grid-cols-4 h-9 mb-3">
+                          <TabsTrigger value="font" style={{ justifyContent: "center" }}>
+                            <Type className="size-4" />
+                          </TabsTrigger>
+                          <TabsTrigger value="colors" style={{ justifyContent: "center" }}>
+                            <Highlighter className="size-4" />
+                          </TabsTrigger>
+                          <TabsTrigger value="position" style={{ justifyContent: "center" }}>
+                            <SquareCenterlineDashedVerticalIcon className="size-4" />
+                          </TabsTrigger>
+                          <TabsTrigger value="animation" style={{ justifyContent: "center" }}>
+                            <WandSparkles className="size-4" />
+                          </TabsTrigger>
+                        </TabsList>
+                        <TabsContent value="font" className="mt-0 space-y-3">
+                          <div>
+                            <Label className="text-xs">Font</Label>
+                            <Select
+                              value={seg.style.fontFamily}
+                              onValueChange={(v) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { fontFamily: v },
+                                })
+                              }
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value={SYSTEM_FONT}>
+                                  System
+                                </SelectItem>
+                                {FONTS_LIST.map((f) => (
+                                  <SelectItem
+                                    key={f.family}
+                                    value={f.family}
+                                    style={{ fontFamily: f.family }}
+                                  >
+                                    {getFontDisplayName(f.family)}
+                                  </SelectItem>
+                                ))}
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div className="flex gap-2">
+                            <div className="flex-1">
+                              <Label className="text-xs">Size</Label>
+                              <Input
+                                type="number"
+                                value={seg.style.fontSize}
+                                onChange={(e) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      fontSize:
+                                        parseInt(e.target.value, 10) || 60,
+                                    },
+                                  })
+                                }
+                                className="mt-1"
+                                min={12}
+                                max={120}
+                              />
+                            </div>
+                            <div className="flex-1">
+                              <Label className="text-xs">Weight</Label>
+                              <Select
+                                value={String(seg.style.fontWeight)}
+                                onValueChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      fontWeight: parseInt(v, 10),
+                                    },
+                                  })
+                                }
+                              >
+                                <SelectTrigger className="mt-1">
+                                  <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {[400, 500, 600, 700, 800, 900].map((w) => (
+                                    <SelectItem
+                                      key={w}
+                                      value={String(w)}
+                                    >
+                                      {w}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+                          <div className="flex gap-4">
+                            <div className="flex flex-col flex-1 justify-between gap-3">
+                              <div>
+                                <Label className="text-xs text-muted-foreground">
+                                  Italic
+                                </Label>
+                              </div>
+                              <Switch
+                                checked={seg.style.fontStyle === "italic"}
+                                onCheckedChange={(checked: boolean) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      fontStyle: checked ? "italic" : "normal",
+                                    },
+                                  })
+                                }
+                              />
+                            </div>
+                            <div className="flex flex-col flex-1 justify-between gap-3">
+                              <div>
+                                <Label className="text-xs text-muted-foreground">
+                                  Uppercase
+                                </Label>
+                              </div>
+                              <Switch
+                                checked={seg.style.uppercase ?? false}
+                                onCheckedChange={(checked: boolean) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { uppercase: checked },
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <Label className="text-xs">
+                              Line height ({seg.style.lineHeight ?? 1.2})
+                            </Label>
+                            <Slider
+                              value={[seg.style.lineHeight ?? 1.2]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { lineHeight: v },
+                                })
+                              }
+                              min={0.8}
+                              max={2.5}
+                              step={0.1}
+                              className="mt-1"
+                            />
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="colors" className="mt-0 space-y-3">
+                          <div>
+                            <Label className="text-xs">Text color</Label>
+                            <div className="mt-1">
+                              <ColorPickerInput
+                                value={seg.style.textColor}
+                                onChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { textColor: v },
+                                  })
+                                }
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-4">
+                            <div className="space-y-1 flex-1">
+                              <Label className="text-xs">Stroke</Label>
+                              <ColorPickerInput
+                                value={seg.style.strokeColor}
+                                onChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { strokeColor: v },
+                                  })
+                                }
+                                className="mt-1"
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between">
+                                <Label className="text-xs">Stroke width</Label>
+                                <span className="text-xs text-muted-foreground">
+                                  {seg.style.strokeWidth}px
+                                </span>
+                              </div>
+                              <Slider
+                                value={[seg.style.strokeWidth]}
+                                onValueChange={([v]) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { strokeWidth: v },
+                                  })
+                                }
+                                min={0}
+                                max={6}
+                                step={1}
+                                className="mt-1"
+                              />
+                            </div>
+                          </div>
+                          <div className="flex gap-4">
+                            <div className="space-y-1 flex-1">
+                              <Label className="text-xs">Shadow color</Label>
+                              <ColorPickerInput
+                                value={seg.style.shadowColor}
+                                onChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { shadowColor: v },
+                                  })
+                                }
+                                className="mt-1"
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between">
+                                <Label className="text-xs">Shadow blur</Label>
+                                <span className="text-xs text-muted-foreground">
+                                  {seg.style.shadowBlur}px
+                                </span>
+                              </div>
+                              <Slider
+                                value={[seg.style.shadowBlur]}
+                                onValueChange={([v]) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { shadowBlur: v },
+                                  })
+                                }
+                                min={0}
+                                max={40}
+                                step={2}
+                                className="mt-1"
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <Label className="text-xs">Shadow opacity</Label>
+                              <span className="text-xs text-muted-foreground">
+                                {Math.round((seg.style.shadowOpacity ?? 1) * 100)}%
+                              </span>
+                            </div>
+                            <Slider
+                              value={[(seg.style.shadowOpacity ?? 1) * 100]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { shadowOpacity: v / 100 },
+                                })
+                              }
+                              min={0}
+                              max={100}
+                              step={5}
+                            />
+                          </div>
+                          <div className="grid grid-cols-2 gap-2">
+                            <div>
+                              <Label className="text-xs">Shadow offset X</Label>
+                              <Input
+                                type="number"
+                                value={seg.style.shadowOffsetX}
+                                onChange={(e) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      shadowOffsetX: parseInt(e.target.value, 10) || 0,
+                                    },
+                                  })
+                                }
+                                min={-20}
+                                max={20}
+                                className="mt-1"
+                              />
+                            </div>
+                            <div>
+                              <Label className="text-xs">Shadow offset Y</Label>
+                              <Input
+                                type="number"
+                                value={seg.style.shadowOffsetY}
+                                onChange={(e) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: {
+                                      shadowOffsetY: parseInt(e.target.value, 10) || 0,
+                                    },
+                                  })
+                                }
+                                min={-20}
+                                max={20}
+                                className="mt-1"
+                              />
+                            </div>
+                          </div>
+                          <div>
+                            <Label className="text-xs">Background</Label>
+                            <div className="flex gap-2 mt-1">
+                              <ColorPickerInput
+                                value={seg.style.backgroundColor}
+                                onChange={(v) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { backgroundColor: v },
+                                  })
+                                }
+                              />
+                              <div className="flex-1">
+                                <Slider
+                                  value={[seg.style.backgroundOpacity * 100]}
+                                  onValueChange={([v]) =>
+                                    updateTextSegment(selectedTextSegment, {
+                                      style: {
+                                        backgroundOpacity: v / 100,
+                                      },
+                                    })
+                                  }
+                                  min={0}
+                                  max={100}
+                                  step={5}
+                                />
+                                <span className="text-[10px] text-muted-foreground">
+                                  {Math.round(seg.style.backgroundOpacity * 100)}%
+                                </span>
+                              </div>
+                            </div>
+                          </div>
+                          <div className="flex gap-4">
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Width (padding)</span>
+                                <span>{seg.style.paddingX}px</span>
+                              </div>
+                              <Slider
+                                value={[seg.style.paddingX]}
+                                onValueChange={([v]) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { paddingX: v },
+                                  })
+                                }
+                                min={0}
+                                max={48}
+                                step={2}
+                              />
+                            </div>
+                            <div className="space-y-2 flex-1">
+                              <div className="flex justify-between text-xs text-muted-foreground">
+                                <span>Height (padding)</span>
+                                <span>{seg.style.paddingY}px</span>
+                              </div>
+                              <Slider
+                                value={[seg.style.paddingY]}
+                                onValueChange={([v]) =>
+                                  updateTextSegment(selectedTextSegment, {
+                                    style: { paddingY: v },
+                                  })
+                                }
+                                min={0}
+                                max={32}
+                                step={2}
+                              />
+                            </div>
+                          </div>
+                          <div className="space-y-2">
+                            <div className="flex justify-between">
+                              <Label className="text-xs">Border radius</Label>
+                              <span className="text-xs text-muted-foreground">
+                                {seg.style.borderRadius}px
+                              </span>
+                            </div>
+                            <Slider
+                              value={[seg.style.borderRadius]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { borderRadius: v },
+                                })
+                              }
+                              min={0}
+                              max={24}
+                              step={1}
+                            />
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="position" className="mt-0 space-y-3">
+                          <div>
+                            <Label className="text-xs">Position</Label>
+                            <Select
+                              value={seg.style.position}
+                              onValueChange={(v) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: {
+                                    position: v as "top" | "center" | "bottom",
+                                    positionY:
+                                      v === "top"
+                                        ? 20
+                                        : v === "center"
+                                          ? 50
+                                          : 85,
+                                  },
+                                })
+                              }
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="top">Top</SelectItem>
+                                <SelectItem value="center">Center</SelectItem>
+                                <SelectItem value="bottom">Bottom</SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                          <div>
+                            <Label className="text-xs">
+                              Vertical offset ({seg.style.positionY ?? 50}%)
+                            </Label>
+                            <Slider
+                              value={[seg.style.positionY ?? 50]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { positionY: v },
+                                })
+                              }
+                              min={5}
+                              max={95}
+                              step={1}
+                              className="mt-1"
+                            />
+                          </div>
+                          <div>
+                            <div className="flex justify-between">
+                              <Label className="text-xs">Side margin</Label>
+                              <span className="text-xs text-muted-foreground">
+                                {seg.style.containerMarginX ?? 40}px
+                              </span>
+                            </div>
+                            <Slider
+                              value={[seg.style.containerMarginX ?? 40]}
+                              onValueChange={([v]) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: { containerMarginX: v },
+                                })
+                              }
+                              min={24}
+                              max={200}
+                              step={4}
+                              className="mt-1"
+                            />
+                            <p className="text-[10px] text-muted-foreground mt-1">
+                              Left/right margin. Larger = narrower text area.
+                            </p>
+                          </div>
+                        </TabsContent>
+                        <TabsContent value="animation" className="mt-0 space-y-3">
+                          <div>
+                            <Label className="text-xs">Animation</Label>
+                            <Select
+                              value={seg.style.animation}
+                              onValueChange={(v) =>
+                                updateTextSegment(selectedTextSegment, {
+                                  style: {
+                                    animation: v as
+                                      | "none"
+                                      | "fade"
+                                      | "pop"
+                                      | "slide"
+                                      | "typewriter",
+                                  },
+                                })
+                              }
+                            >
+                              <SelectTrigger className="mt-1">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="none">None</SelectItem>
+                                <SelectItem value="fade">Fade</SelectItem>
+                                <SelectItem value="pop">Pop</SelectItem>
+                                <SelectItem value="slide">Slide</SelectItem>
+                                <SelectItem value="typewriter">
+                                  Typewriter
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </TabsContent>
+                      </Tabs>
+                    </div>
+                  );
+                })()}
+
+                {!selectedTextSegment && customTextSegments.length > 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Click a segment above or on the timeline to edit
+                  </p>
+                )}
+              </TabsContent>
+
+              <TabsContent
+                value="banners"
+                className="mt-0 outline-none p-4 overflow-auto"
+              >
+                <Label className="mb-2 text-muted-foreground">
+                  Social Banners
+                </Label>
+
+                {bannerTracks.length === 0 && (
+                  <div className="space-y-3 mb-4">
+                    <div className="grid grid-cols-1 gap-2">
+                      {BANNER_PRESETS.map((preset) => (
+                        <Button
+                          key={preset.id}
+                          variant="outline"
+                          className="flex flex-col items-start p-4 h-auto text-left"
+                          onClick={() => {
+                            const frame =
+                              playerRef.current?.getCurrentFrame() ?? 0;
+                            const newTrack: BannerTrack = {
+                              id: `banner-track-${Date.now()}`,
+                              name: preset.name,
+                              visible: true,
+                              color: BANNER_TRACK_COLORS[0],
+                            };
+                            const newSegment: BannerSegment = {
+                              id: `banner-seg-${Date.now()}`,
+                              trackId: newTrack.id,
+                              logoUrl: preset.logoUrl,
+                              text: "YOUR-PAGE.URL",
+                              startFrame: Math.min(
+                                frame,
+                                compositionDuration - 60
+                              ),
+                              endFrame: Math.min(
+                                frame + 90,
+                                compositionDuration
+                              ),
+                              style: { ...preset.style },
+                            };
+                            setBannerTracks((prev) => [...prev, newTrack]);
+                            setBannerSegments((prev) => [
+                              ...prev,
+                              newSegment,
+                            ]);
+                            setSelectedBannerSegment(newSegment.id);
+                            playerRef.current?.seekTo(newSegment.startFrame);
+                          }}
+                        >
+                          <span className="font-semibold">{preset.name}</span>
+                        </Button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="space-y-2 mb-4 max-h-64 overflow-y-auto">
+                  {bannerTracks.map((track) => {
+                    const segments = bannerSegments.filter(
+                      (s) => s.trackId === track.id
+                    );
+                    const isExpanded = !collapsedBannerTrackIds.has(track.id);
+                    return (
+                      <div
+                        key={track.id}
+                        className="rounded-lg border border-border bg-secondary/30 overflow-hidden"
+                      >
+                        <div className="flex items-center gap-1.5 p-2 pr-1">
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6 shrink-0"
+                            onClick={() =>
+                              setCollapsedBannerTrackIds((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(track.id)) next.delete(track.id);
+                                else next.add(track.id);
+                                return next;
+                              })
+                            }
+                          >
+                            {isExpanded ? (
+                              <ChevronDown className="size-3.5" />
+                            ) : (
+                              <ChevronRight className="size-3.5" />
+                            )}
+                          </Button>
+                          <span
+                            className="shrink-0 w-2 h-2 rounded-full"
+                            style={{ backgroundColor: track.color }}
+                          />
+                          <span className="text-xs font-medium truncate flex-1">
+                            {track.name}
+                          </span>
+                          <Switch
+                            checked={track.visible}
+                            onCheckedChange={(visible) =>
+                              setBannerTracks((prev) =>
+                                prev.map((t) =>
+                                  t.id === track.id ? { ...t, visible } : t
+                                )
+                              )
+                            }
+                            onClick={(e) => e.stopPropagation()}
+                          />
+                          <Popover
+                            open={bannerPresetPopoverTrackId === track.id}
+                            onOpenChange={(open) =>
+                              setBannerPresetPopoverTrackId(open ? track.id : null)
+                            }
+                          >
+                            <PopoverTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className="h-6 px-1.5 text-xs"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <Plus className="size-3 mr-0.5" />
+                                Add
+                              </Button>
+                            </PopoverTrigger>
+                            <PopoverContent
+                              className="w-64 p-2"
+                              align="end"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="text-xs font-medium text-muted-foreground px-2 py-1.5 mb-1">
+                                Choose style
+                              </div>
+                              <div className="space-y-0.5">
+                                {BANNER_PRESETS.map((preset) => (
+                                  <Button
+                                    key={preset.id}
+                                    variant="ghost"
+                                    size="sm"
+                                    className="w-full justify-start h-auto py-2 px-2 text-left"
+                                    onClick={() => {
+                                      setBannerPresetPopoverTrackId(null);
+                                      const frame =
+                                        playerRef.current?.getCurrentFrame() ??
+                                        0;
+                                      const newSegment: BannerSegment = {
+                                        id: `banner-seg-${Date.now()}`,
+                                        trackId: track.id,
+                                        logoUrl: preset.logoUrl,
+                                        text: "YOUR-PAGE.URL",
+                                        startFrame: Math.min(
+                                          frame,
+                                          compositionDuration - 60
+                                        ),
+                                        endFrame: Math.min(
+                                          frame + 90,
+                                          compositionDuration
+                                        ),
+                                        style: { ...preset.style },
+                                      };
+                                      setBannerSegments((prev) => [
+                                        ...prev,
+                                        newSegment,
+                                      ]);
+                                      setSelectedBannerSegment(newSegment.id);
+                                      playerRef.current?.seekTo(
+                                        newSegment.startFrame
+                                      );
+                                      setCollapsedBannerTrackIds((prev) => {
+                                        const next = new Set(prev);
+                                        next.delete(track.id);
+                                        return next;
+                                      });
+                                    }}
+                                  >
+                                    <span className="font-medium">
+                                      {preset.name}
+                                    </span>
+                                  </Button>
+                                ))}
+                              </div>
+                            </PopoverContent>
+                          </Popover>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="h-6 w-6"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setBannerTracks((prev) =>
+                                prev.filter((t) => t.id !== track.id)
+                              );
+                              setBannerSegments((prev) =>
+                                prev.filter((s) => s.trackId !== track.id)
+                              );
+                              if (
+                                bannerSegments.some(
+                                  (s) =>
+                                    s.id === selectedBannerSegment &&
+                                    s.trackId === track.id
+                                )
+                              ) {
+                                setSelectedBannerSegment(null);
+                              }
+                            }}
+                          >
+                            <X className="size-3" />
+                          </Button>
+                        </div>
+                        {isExpanded && (
+                          <div className="border-t border-border/50 px-2 pb-2 pt-1.5 space-y-1">
+                            {segments.length === 0 ? (
+                              <p className="text-[10px] text-muted-foreground py-1 px-2">
+                                No segments — click Add
+                              </p>
+                            ) : (
+                              segments.map((seg) => (
+                                <div
+                                  key={seg.id}
+                                  data-banner-segment-id={seg.id}
+                                  onClick={() => {
+                                    setSelectedBannerSegment(seg.id);
+                                    playerRef.current?.seekTo(seg.startFrame);
+                                  }}
+                                  className={cn(
+                                    "flex items-center gap-2 rounded-md border p-2 cursor-pointer transition-colors",
+                                    selectedBannerSegment === seg.id
+                                      ? "border-primary bg-primary/10"
+                                      : "border-border/50 bg-muted/30 hover:bg-muted/50"
+                                  )}
+                                >
+                                  {seg.logoUrl ? (
+                                    <img
+                                      src={seg.logoUrl}
+                                      alt=""
+                                      className="w-8 h-8 object-contain rounded shrink-0"
+                                    />
+                                  ) : (
+                                    <div className="w-8 h-8 rounded bg-muted shrink-0 flex items-center justify-center text-[10px] text-muted-foreground">
+                                      +
+                                    </div>
+                                  )}
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-sm font-medium truncate">
+                                      {seg.text || "Empty"}
+                                    </div>
+                                    <div className="text-[10px] text-muted-foreground">
+                                      {formatTime(seg.startFrame)} -{" "}
+                                      {formatTime(seg.endFrame)}
+                                    </div>
+                                  </div>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+
+                {bannerTracks.length > 0 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full mb-4 border-dashed"
+                    onClick={() => {
+                      const newTrack: BannerTrack = {
+                        id: `banner-track-${Date.now()}`,
+                        name: `Banner ${bannerTracks.length + 1}`,
+                        visible: true,
+                        color:
+                          BANNER_TRACK_COLORS[
+                            bannerTracks.length % BANNER_TRACK_COLORS.length
+                          ],
+                      };
+                      setBannerTracks((prev) => [...prev, newTrack]);
+                      setCollapsedBannerTrackIds((prev) => {
+                        const next = new Set(prev);
+                        next.delete(newTrack.id);
+                        return next;
+                      });
+                    }}
+                  >
+                    <Plus className="mr-2 size-4" />
+                    Add track
+                  </Button>
+                )}
+
+                {selectedBannerSegment && (() => {
+                  const seg = bannerSegments.find(
+                    (s) => s.id === selectedBannerSegment
+                  );
+                  if (!seg) return null;
+
+                  return (
+                    <div className="space-y-4 border-t border-border pt-4 mt-4">
+                      <Label className="text-muted-foreground">
+                        Edit selected banner
+                      </Label>
+                      <div className="text-xs text-muted-foreground">
+                        {formatTime(seg.startFrame)} - {formatTime(seg.endFrame)}
+                        {" · "}
+                        Drag on timeline to change
+                      </div>
+
+                      <div className="space-y-3">
+                        <div>
+                          <Label className="text-xs">Text</Label>
+                          <Input
+                            value={seg.text}
+                            onChange={(e) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? { ...s, text: e.target.value }
+                                    : s
+                                )
+                              )
+                            }
+                            placeholder="YOUR-PAGE.URL"
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Text color</Label>
+                          <ColorPickerInput
+                            value={seg.style.textColor}
+                            onChange={(v) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? { ...s, style: { ...s.style, textColor: v } }
+                                    : s
+                                )
+                              )
+                            }
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <Label className="text-xs">Background</Label>
+                          <div className="flex gap-2 mt-1">
+                            <ColorPickerInput
+                              value={seg.style.backgroundColor}
+                              onChange={(v) =>
+                                setBannerSegments((prev) =>
+                                  prev.map((s) =>
+                                    s.id === selectedBannerSegment
+                                      ? {
+                                          ...s,
+                                          style: { ...s.style, backgroundColor: v },
+                                        }
+                                      : s
+                                  )
+                                )
+                              }
+                            />
+                            <div className="flex-1">
+                              <Slider
+                                value={[seg.style.backgroundOpacity * 100]}
+                                onValueChange={([v]) =>
+                                  setBannerSegments((prev) =>
+                                    prev.map((s) =>
+                                      s.id === selectedBannerSegment
+                                        ? {
+                                            ...s,
+                                            style: {
+                                              ...s.style,
+                                              backgroundOpacity: v / 100,
+                                            },
+                                          }
+                                        : s
+                                    )
+                                  )
+                                }
+                                min={0}
+                                max={100}
+                                step={5}
+                              />
+                              <span className="text-[10px] text-muted-foreground">
+                                {Math.round(seg.style.backgroundOpacity * 100)}%
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+                        <div>
+                          <Label className="text-xs">
+                            Vertical position ({seg.style.positionY ?? 90}%)
+                          </Label>
+                          <Slider
+                            value={[seg.style.positionY ?? 90]}
+                            onValueChange={([v]) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? {
+                                        ...s,
+                                        style: { ...s.style, positionY: v },
+                                      }
+                                    : s
+                                )
+                              )
+                            }
+                            min={0}
+                            max={100}
+                            step={1}
+                            className="mt-1"
+                          />
+                          <p className="text-[10px] text-muted-foreground">
+                            0% = top, 100% = bottom
+                          </p>
+                        </div>
+                        <div>
+                          <Label className="text-xs">Animation</Label>
+                          <Select
+                            value={seg.style.animation}
+                            onValueChange={(v) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? {
+                                        ...s,
+                                        style: {
+                                          ...s.style,
+                                          animation: v as BannerStyle["animation"],
+                                        },
+                                      }
+                                    : s
+                                )
+                              )
+                            }
+                          >
+                            <SelectTrigger className="mt-1">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="none">None</SelectItem>
+                              <SelectItem value="fade">Fade</SelectItem>
+                              <SelectItem value="slide-up">Slide up</SelectItem>
+                              <SelectItem value="slide-down">Slide down</SelectItem>
+                              <SelectItem value="slide-left">Slide left</SelectItem>
+                              <SelectItem value="slide-right">Slide right</SelectItem>
+                              <SelectItem value="pop">Pop</SelectItem>
+                              <SelectItem value="bounce">Bounce</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <div className="space-y-2">
+                          <div className="flex justify-between">
+                            <Label className="text-xs">Border radius</Label>
+                            <span className="text-xs text-muted-foreground">
+                              {seg.style.borderRadius}px
+                            </span>
+                          </div>
+                          <Slider
+                            value={[seg.style.borderRadius]}
+                            onValueChange={([v]) =>
+                              setBannerSegments((prev) =>
+                                prev.map((s) =>
+                                  s.id === selectedBannerSegment
+                                    ? {
+                                        ...s,
+                                        style: { ...s.style, borderRadius: v },
+                                      }
+                                    : s
+                                )
+                              )
+                            }
+                            min={0}
+                            max={32}
+                            step={1}
+                          />
+                        </div>
+                      </div>
+
+                      <div className="border-t border-border pt-3">
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="w-full justify-start text-muted-foreground h-8"
+                          onClick={() =>
+                            setBannerEditorMoreOptionsOpen(
+                              !bannerEditorMoreOptionsOpen
+                            )
+                          }
+                        >
+                          {bannerEditorMoreOptionsOpen ? (
+                            <ChevronDown className="size-4 mr-2" />
+                          ) : (
+                            <ChevronRight className="size-4 mr-2" />
+                          )}
+                          More options
+                        </Button>
+                        {bannerEditorMoreOptionsOpen && (
+                          <div className="space-y-3 mt-2 pl-6">
+                            <div className="flex gap-2">
+                              <div className="flex-1">
+                                <Label className="text-xs">Logo width</Label>
+                                <Input
+                                  type="number"
+                                  value={seg.style.logoWidth}
+                                  onChange={(e) =>
+                                    setBannerSegments((prev) =>
+                                      prev.map((s) =>
+                                        s.id === selectedBannerSegment
+                                          ? {
+                                              ...s,
+                                              style: {
+                                                ...s.style,
+                                                logoWidth:
+                                                  parseInt(e.target.value, 10) ||
+                                                  80,
+                                              },
+                                            }
+                                          : s
+                                      )
+                                    )
+                                  }
+                                  min={20}
+                                  max={300}
+                                  className="mt-1"
+                                />
+                              </div>
+                              <div className="flex-1">
+                                <Label className="text-xs">Logo height</Label>
+                                <Input
+                                  type="number"
+                                  value={seg.style.logoHeight}
+                                  onChange={(e) =>
+                                    setBannerSegments((prev) =>
+                                      prev.map((s) =>
+                                        s.id === selectedBannerSegment
+                                          ? {
+                                              ...s,
+                                              style: {
+                                                ...s.style,
+                                                logoHeight:
+                                                  parseInt(e.target.value, 10) ||
+                                                  80,
+                                              },
+                                            }
+                                          : s
+                                      )
+                                    )
+                                  }
+                                  min={20}
+                                  max={200}
+                                  className="mt-1"
+                                />
+                              </div>
+                            </div>
+                            <div>
+                              <Label className="text-xs">
+                                Text font size ({seg.style.fontSize}px)
+                              </Label>
+                              <Slider
+                                value={[seg.style.fontSize]}
+                                onValueChange={([v]) =>
+                                  setBannerSegments((prev) =>
+                                    prev.map((s) =>
+                                      s.id === selectedBannerSegment
+                                        ? {
+                                            ...s,
+                                            style: { ...s.style, fontSize: v },
+                                          }
+                                        : s
+                                    )
+                                  )
+                                }
+                                min={12}
+                                max={72}
+                                step={2}
+                                className="mt-1"
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-destructive"
+                        onClick={() => {
+                          setBannerSegments((prev) =>
+                            prev.filter((s) => s.id !== selectedBannerSegment)
+                          );
+                          setSelectedBannerSegment(null);
+                        }}
+                      >
+                        <X className="mr-2 size-4" />
+                        Remove banner
+                      </Button>
+                    </div>
+                  );
+                })()}
+
+                {!selectedBannerSegment && bannerSegments.length > 0 && (
+                  <p className="text-sm text-muted-foreground text-center py-4">
+                    Click a segment above or on the timeline to edit
+                  </p>
+                )}
+              </TabsContent>
+            </div>
+          </Tabs>
+
+          {/* Resize handle - drag up/down to change panel height (top edge) */}
+          <div
+            role="separator"
+            aria-label="Resize panel height"
+            onMouseDown={handleBottomPanelResizeStart}
+            onTouchStart={handleBottomPanelResizeStart}
+            className={cn(
+              "absolute left-0 right-0 top-0 z-10 h-6 w-full cursor-ns-resize select-none border-t border-transparent transition-colors hover:border-primary/30 hover:bg-primary/10 touch-manipulation",
+              resizingBottomPanel && "border-primary/50 bg-primary/20"
+            )}
+          />
+            </>
+          )}
+        </aside>
+
+
         {/* Center - Video Preview */}
-        <main className="flex flex-col min-w-0 flex-2 items-center justify-center bg-black/20 dark:bg-white/20">
+        <main className="flex min-h-0 flex-1 flex-col min-w-0 items-center justify-center bg-black/20 dark:bg-white/20 sm:flex-2">
           <div
             className="h-full max-h-full max-w-full m-4"
             style={{ aspectRatio: "9 / 16" }}

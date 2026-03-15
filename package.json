@@ -16,6 +16,7 @@
 		"@remotion/google-fonts": "^4.0.434",
 		"@remotion/openai-whisper": "4.0.434",
 		"@remotion/player": "4.0.434",
+		"@remotion/transitions": "4.0.434",
 		"@vercel/functions": "^3.1.4",
 		"@whop/react": "0.3.0",
 		"@whop/sdk": "0.0.3",

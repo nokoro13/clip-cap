@@ -683,7 +683,7 @@ export const Timeline: React.FC<TimelineProps> = ({
         className="relative flex items-center justify-between px-4 border-b border-border"
         style={{ height: HEADER_HEIGHT }}
       >
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 max-w-[40%] overflow-x-auto">
           <Button
             variant="ghost"
             size="icon"

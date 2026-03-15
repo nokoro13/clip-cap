@@ -67,22 +67,22 @@ export default async function ExperiencePage({
 			/>
 			<RecentProjectsGallery experienceId={experienceId} />
 
-			<h3 className="text-6 font-bold">Experience data</h3>
+			{/* <h3 className="text-6 font-bold">Experience data</h3>
 			<JsonViewer data={experience} />
 
 			<h3 className="text-6 font-bold">User data</h3>
 			<JsonViewer data={user} />
 
 			<h3 className="text-6 font-bold">Access data</h3>
-			<JsonViewer data={access} />
+			<JsonViewer data={access} /> */}
 		</div>
 	);
 }
 
-function JsonViewer({ data }: { data: any }) {
-	return (
-		<pre className="text-2 border border-gray-a4 rounded-lg p-4 bg-gray-a2 max-h-72 overflow-y-auto">
-			<code className="text-gray-10">{JSON.stringify(data, null, 2)}</code>
-		</pre>
-	);
-}
+// function JsonViewer({ data }: { data: any }) {
+// 	return (
+// 		<pre className="text-2 border border-gray-a4 rounded-lg p-4 bg-gray-a2 max-h-72 overflow-y-auto">
+// 			<code className="text-gray-10">{JSON.stringify(data, null, 2)}</code>
+// 		</pre>
+// 	);
+// }

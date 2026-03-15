@@ -70,9 +70,9 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
     return (
       <div className={cn('space-y-4', className)}>
         <h2 className="text-sm font-medium text-muted-foreground">Projects</h2>
-        <div className="flex gap-4 overflow-x-auto pb-2">
-          <div className="h-32 w-48 shrink-0 rounded-xl bg-muted/50" />
-          <div className="h-32 w-48 shrink-0 rounded-xl bg-muted/50" />
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
+          <div className="aspect-[16/11] rounded-xl bg-muted/50" />
+          <div className="aspect-[16/11] rounded-xl bg-muted/50" />
         </div>
       </div>
     );
@@ -87,7 +87,7 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
           No recent projects. Create one with Generate Subtitles or Bulk Generate above.
         </p>
       ) : (
-        <div className="flex gap-4 overflow-x-auto pb-2">
+        <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-4">
           {entries.map((entry) => {
             const href = entry.type === 'editor' ? `/editor/${entry.id}` : `/projects/${entry.id}`;
             const label = entry.type === 'editor' ? 'Subtitles' : 'Bulk';
@@ -99,7 +99,7 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
               <Card
                 key={entry.id}
                 className={cn(
-                  'min-w-[200px] max-w-[240px] shrink-0 overflow-hidden transition-shadow hover:shadow-md',
+                  'flex min-h-0 w-full flex-col overflow-hidden transition-shadow hover:shadow-md',
                   isProcessing && 'border-primary/30',
                   isError && 'border-destructive/30'
                 )}
@@ -125,7 +125,7 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
                     <Icon className="size-10 text-muted-foreground" />
                   )}
                 </div>
-                <CardContent className="px-4">
+                <CardContent className="flex flex-1 flex-col px-4">
                   <p className="truncate text-sm font-medium" title={entry.title}>
                     {truncateTitle(entry.title, 28)}
                   </p>
