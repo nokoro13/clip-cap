@@ -13,7 +13,7 @@ interface SubtitleTrackProps {
   zoom: number;
   onSelectSubtitle: (id: string) => void;
   onDragStart: (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.TouchEvent | { clientX: number },
     id: string,
     type: "move" | "trim-start" | "trim-end"
   ) => void;

@@ -83,20 +83,12 @@ export const BannerSegment: React.FC<BannerSegmentProps> = ({
     };
   }, [onDragStart]);
 
-  const handleTrimStartMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  const handleTrimPointerDown = useCallback(
+    (e: React.MouseEvent | React.TouchEvent, type: "trim-start" | "trim-end") => {
+      e.preventDefault();
       e.stopPropagation();
       onSelect(segment.id);
-      onDragStart(e, segment.id, "trim-start");
-    },
-    [segment.id, onSelect, onDragStart]
-  );
-
-  const handleTrimEndMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      onSelect(segment.id);
-      onDragStart(e, segment.id, "trim-end");
+      onDragStart({ clientX: getReactClientX(e) }, segment.id, type);
     },
     [segment.id, onSelect, onDragStart]
   );
@@ -131,7 +123,8 @@ export const BannerSegment: React.FC<BannerSegmentProps> = ({
           isHovered || isSelected ? "opacity-100" : "opacity-0"
         )}
         style={{ width: TRIM_HANDLE_WIDTH }}
-        onMouseDown={handleTrimStartMouseDown}
+        onMouseDown={(e) => handleTrimPointerDown(e, "trim-start")}
+        onTouchStart={(e) => handleTrimPointerDown(e, "trim-start")}
       />
 
       {/* Segment content - logo thumbnail + text preview */}

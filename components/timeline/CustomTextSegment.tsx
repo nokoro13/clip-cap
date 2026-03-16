@@ -20,7 +20,7 @@ export const CustomTextSegment: React.FC<CustomTextSegmentProps> = ({
   onDragStart,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const pendingDragRef = useRef<{ e: React.MouseEvent; id: string } | null>(null);
+  const pendingDragRef = useRef<{ clientX: number; clientY: number; id: string } | null>(null);
 
   const leftPosition = framesToPixels(segment.startFrame, fps, zoom);
   const width = framesToPixels(
@@ -83,20 +83,12 @@ export const CustomTextSegment: React.FC<CustomTextSegmentProps> = ({
     };
   }, [onDragStart]);
 
-  const handleTrimStartMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  const handleTrimPointerDown = useCallback(
+    (e: React.MouseEvent | React.TouchEvent, type: "trim-start" | "trim-end") => {
+      e.preventDefault();
       e.stopPropagation();
       onSelect(segment.id);
-      onDragStart(e, segment.id, "trim-start");
-    },
-    [segment.id, onSelect, onDragStart]
-  );
-
-  const handleTrimEndMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      onSelect(segment.id);
-      onDragStart(e, segment.id, "trim-end");
+      onDragStart({ clientX: getReactClientX(e) }, segment.id, type);
     },
     [segment.id, onSelect, onDragStart]
   );
@@ -130,7 +122,8 @@ export const CustomTextSegment: React.FC<CustomTextSegmentProps> = ({
           isHovered || isSelected ? "opacity-100" : "opacity-0"
         )}
         style={{ width: TRIM_HANDLE_WIDTH }}
-        onMouseDown={handleTrimStartMouseDown}
+        onMouseDown={(e) => handleTrimPointerDown(e, "trim-start")}
+        onTouchStart={(e) => handleTrimPointerDown(e, "trim-start")}
       />
 
       {/* Segment content */}
