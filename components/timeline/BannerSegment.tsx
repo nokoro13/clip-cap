@@ -4,7 +4,7 @@ import React, { useCallback, useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
 import { framesToPixels, getReactClientX } from "./utils";
 import type { BannerSegmentProps } from "./types";
-import { TRIM_HANDLE_WIDTH } from "./constants";
+import { TRIM_HANDLE_TOUCH_MIN } from "./constants";
 
 const DRAG_THRESHOLD_PX = 4;
 
@@ -116,16 +116,18 @@ export const BannerSegment: React.FC<BannerSegmentProps> = ({
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      {/* Left trim handle */}
+      {/* Left trim handle - wider touch target for mobile */}
       <div
         className={cn(
-          "absolute left-0 top-0 bottom-0 bg-black/30 cursor-ew-resize hover:bg-black/50 transition-colors",
+          "absolute left-0 top-0 bottom-0 z-10 cursor-ew-resize touch-none select-none [-webkit-tap-highlight-color:transparent]",
           isHovered || isSelected ? "opacity-100" : "opacity-0"
         )}
-        style={{ width: TRIM_HANDLE_WIDTH }}
+        style={{ minWidth: TRIM_HANDLE_TOUCH_MIN, width: TRIM_HANDLE_TOUCH_MIN }}
         onMouseDown={(e) => handleTrimPointerDown(e, "trim-start")}
         onTouchStart={(e) => handleTrimPointerDown(e, "trim-start")}
-      />
+      >
+        <div className="absolute left-0 top-0 bottom-0 w-2 bg-black/30 hover:bg-black/50 transition-colors" />
+      </div>
 
       {/* Segment content - logo thumbnail + text preview */}
       <div className="flex-1 min-w-0 flex items-center gap-1.5 px-2">
@@ -143,16 +145,18 @@ export const BannerSegment: React.FC<BannerSegmentProps> = ({
         </span>
       </div>
 
-      {/* Right trim handle */}
+      {/* Right trim handle - wider touch target for mobile */}
       <div
         className={cn(
-          "absolute right-0 top-0 bottom-0 bg-black/30 cursor-ew-resize hover:bg-black/50 transition-colors",
+          "absolute right-0 top-0 bottom-0 z-10 cursor-ew-resize touch-none select-none [-webkit-tap-highlight-color:transparent]",
           isHovered || isSelected ? "opacity-100" : "opacity-0"
         )}
-        style={{ width: TRIM_HANDLE_WIDTH }}
+        style={{ minWidth: TRIM_HANDLE_TOUCH_MIN, width: TRIM_HANDLE_TOUCH_MIN }}
         onMouseDown={(e) => handleTrimPointerDown(e, "trim-end")}
         onTouchStart={(e) => handleTrimPointerDown(e, "trim-end")}
-      />
+      >
+        <div className="absolute right-0 top-0 bottom-0 w-2 bg-black/30 hover:bg-black/50 transition-colors" />
+      </div>
     </div>
   );
 };

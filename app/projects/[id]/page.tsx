@@ -585,6 +585,7 @@ export default function ProjectGalleryPage() {
                 </div>
               </div>
 
+				<div className="flex flex-col h-full justify-between gap-2">
               {/* Clip info */}
               <CardHeader className="p-4 pb-2">
                 <div className="mb-2 flex items-center justify-between">
@@ -645,6 +646,7 @@ export default function ProjectGalleryPage() {
                   <Archive className="size-4" />
                 </Button>
               </CardContent>
+				</div>
             </Card>
           ))}
         </div>

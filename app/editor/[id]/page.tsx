@@ -4463,7 +4463,7 @@ export default function EditorPage() {
               >
               <TabsContent
                 value="styling"
-                className="mt-0 flex flex-1 min-h-0 flex-col outline-none p-4 gap-4"
+                className="relative mt-0 flex flex-1 min-h-0 flex-col outline-none p-4 gap-4"
               >
                 <Button
                   variant="outline"

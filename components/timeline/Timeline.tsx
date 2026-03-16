@@ -229,6 +229,8 @@ export const Timeline: React.FC<TimelineProps> = ({
 
       document.body.style.cursor =
         type === "move" ? "grabbing" : "ew-resize";
+      document.body.style.touchAction = "none";
+      document.body.style.userSelect = "none";
     },
     [subtitles, videoSegments, customTextSegments, bannerSegments, setVideoSegments]
   );

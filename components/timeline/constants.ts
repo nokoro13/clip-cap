@@ -15,6 +15,8 @@ export const DEFAULT_ZOOM = 50; // pixels per second
 // Segment constraints
 export const MIN_SEGMENT_FRAMES = 15;
 export const TRIM_HANDLE_WIDTH = 8;
+/** Minimum touch target for trim handles (mobile-friendly). Visual bar stays TRIM_HANDLE_WIDTH. */
+export const TRIM_HANDLE_TOUCH_MIN = 24;
 
 // Colors for subtitle segments (from editor page)
 export const SUBTITLE_COLORS = [
