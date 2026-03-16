@@ -199,6 +199,10 @@ export interface TimelineProps {
   setBannerSegments?: React.Dispatch<React.SetStateAction<BannerSegment[]>>;
   selectedBannerSegment?: string | null;
   setSelectedBannerSegment?: React.Dispatch<React.SetStateAction<string | null>>;
+  /** When true, timeline is always expanded and the expand/collapse chevron is hidden (e.g. for mobile) */
+  alwaysExpanded?: boolean;
+  /** When true, play/pause button is hidden (e.g. when play control is shown elsewhere on mobile) */
+  hidePlayButton?: boolean;
 }
 
 export interface DragState {
@@ -239,7 +243,7 @@ export interface SubtitleSegmentProps {
   color: string;
   onSelect: (id: string) => void;
   onDragStart: (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.TouchEvent | { clientX: number },
     id: string,
     type: "move" | "trim-start" | "trim-end"
   ) => void;
@@ -255,7 +259,7 @@ export interface VideoSegmentProps {
   color: string;
   onSelect: (id: string) => void;
   onDragStart: (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.TouchEvent | { clientX: number },
     id: string,
     type: "move" | "trim-start" | "trim-end"
   ) => void;
@@ -269,7 +273,7 @@ export interface VideoTrackProps {
   fps: number;
   zoom: number;
   onDragStart: (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.TouchEvent | { clientX: number },
     id: string,
     type: "move" | "trim-start" | "trim-end"
   ) => void;
@@ -285,7 +289,7 @@ export interface CustomTextSegmentProps {
   color: string;
   onSelect: (id: string) => void;
   onDragStart: (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.TouchEvent | { clientX: number },
     id: string,
     type: "move" | "trim-start" | "trim-end"
   ) => void;
@@ -300,7 +304,7 @@ export interface CustomTextTrackProps {
   fps: number;
   zoom: number;
   onDragStart: (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.TouchEvent | { clientX: number },
     id: string,
     type: "move" | "trim-start" | "trim-end"
   ) => void;
@@ -316,7 +320,7 @@ export interface BannerSegmentProps {
   color: string;
   onSelect: (id: string) => void;
   onDragStart: (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.TouchEvent | { clientX: number },
     id: string,
     type: "move" | "trim-start" | "trim-end"
   ) => void;
@@ -331,7 +335,7 @@ export interface BannerTrackProps {
   fps: number;
   zoom: number;
   onDragStart: (
-    e: React.MouseEvent,
+    e: React.MouseEvent | React.TouchEvent | { clientX: number },
     id: string,
     type: "move" | "trim-start" | "trim-end"
   ) => void;

@@ -2,7 +2,7 @@
 
 import React, { useCallback, useState } from "react";
 import { cn } from "@/lib/utils";
-import { framesToPixels } from "./utils";
+import { framesToPixels, getReactClientX } from "./utils";
 import type { SubtitleSegmentProps } from "./types";
 import { TRIM_HANDLE_WIDTH } from "./constants";
 
@@ -26,29 +26,12 @@ export const SubtitleSegment: React.FC<SubtitleSegmentProps> = ({
     zoom
   );
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  const handlePointerDown = useCallback(
+    (e: React.MouseEvent | React.TouchEvent, type: "move" | "trim-start" | "trim-end") => {
+      e.preventDefault();
       e.stopPropagation();
       onSelect(subtitle.id);
-      onDragStart(e, subtitle.id, "move");
-    },
-    [subtitle.id, onSelect, onDragStart]
-  );
-
-  const handleTrimStartMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      onSelect(subtitle.id);
-      onDragStart(e, subtitle.id, "trim-start");
-    },
-    [subtitle.id, onSelect, onDragStart]
-  );
-
-  const handleTrimEndMouseDown = useCallback(
-    (e: React.MouseEvent) => {
-      e.stopPropagation();
-      onSelect(subtitle.id);
-      onDragStart(e, subtitle.id, "trim-end");
+      onDragStart({ clientX: getReactClientX(e) }, subtitle.id, type);
     },
     [subtitle.id, onSelect, onDragStart]
   );
@@ -66,8 +49,10 @@ export const SubtitleSegment: React.FC<SubtitleSegmentProps> = ({
         width: Math.max(width, 20), // Minimum visible width
         backgroundColor: color,
         cursor: "grab",
+        touchAction: "none",
       }}
-      onMouseDown={handleMouseDown}
+      onMouseDown={(e) => handlePointerDown(e, "move")}
+      onTouchStart={(e) => handlePointerDown(e, "move")}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -78,7 +63,8 @@ export const SubtitleSegment: React.FC<SubtitleSegmentProps> = ({
           isHovered || isSelected ? "opacity-100" : "opacity-0"
         )}
         style={{ width: TRIM_HANDLE_WIDTH }}
-        onMouseDown={handleTrimStartMouseDown}
+        onMouseDown={(e) => handlePointerDown(e, "trim-start")}
+        onTouchStart={(e) => handlePointerDown(e, "trim-start")}
       />
 
       {/* Segment content */}
@@ -93,7 +79,8 @@ export const SubtitleSegment: React.FC<SubtitleSegmentProps> = ({
           isHovered || isSelected ? "opacity-100" : "opacity-0"
         )}
         style={{ width: TRIM_HANDLE_WIDTH }}
-        onMouseDown={handleTrimEndMouseDown}
+        onMouseDown={(e) => handlePointerDown(e, "trim-end")}
+        onTouchStart={(e) => handlePointerDown(e, "trim-end")}
       />
     </div>
   );

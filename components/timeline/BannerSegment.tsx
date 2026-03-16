@@ -2,7 +2,7 @@
 
 import React, { useCallback, useState, useRef, useEffect } from "react";
 import { cn } from "@/lib/utils";
-import { framesToPixels } from "./utils";
+import { framesToPixels, getReactClientX } from "./utils";
 import type { BannerSegmentProps } from "./types";
 import { TRIM_HANDLE_WIDTH } from "./constants";
 
@@ -20,7 +20,7 @@ export const BannerSegment: React.FC<BannerSegmentProps> = ({
   onDragStart,
 }) => {
   const [isHovered, setIsHovered] = useState(false);
-  const pendingDragRef = useRef<{ e: React.MouseEvent; id: string } | null>(null);
+  const pendingDragRef = useRef<{ clientX: number; clientY: number; id: string } | null>(null);
 
   const leftPosition = framesToPixels(segment.startFrame, fps, zoom);
   const width = framesToPixels(
@@ -37,24 +37,31 @@ export const BannerSegment: React.FC<BannerSegmentProps> = ({
     [segment.id, onSelect]
   );
 
-  const handleMouseDown = useCallback(
-    (e: React.MouseEvent) => {
+  const handlePointerDown = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
       e.stopPropagation();
       onSelect(segment.id);
-      pendingDragRef.current = { e, id: segment.id };
+      const clientX = getReactClientX(e);
+      const clientY = "touches" in e ? e.touches[0].clientY : (e as React.MouseEvent).clientY;
+      pendingDragRef.current = { clientX, clientY, id: segment.id };
     },
     [segment.id, onSelect]
   );
 
   useEffect(() => {
-    const handleMove = (moveEvent: MouseEvent) => {
+    const getClientX = (e: MouseEvent | TouchEvent) =>
+      "touches" in e && e.touches[0] ? e.touches[0].clientX : (e as MouseEvent).clientX;
+    const getClientY = (e: MouseEvent | TouchEvent) =>
+      "touches" in e && e.touches[0] ? e.touches[0].clientY : (e as MouseEvent).clientY;
+
+    const handleMove = (moveEvent: MouseEvent | TouchEvent) => {
       const p = pendingDragRef.current;
       if (!p) return;
-      const dx = moveEvent.clientX - p.e.clientX;
-      const dy = moveEvent.clientY - p.e.clientY;
+      const dx = getClientX(moveEvent) - p.clientX;
+      const dy = getClientY(moveEvent) - p.clientY;
       if (Math.abs(dx) > DRAG_THRESHOLD_PX || Math.abs(dy) > DRAG_THRESHOLD_PX) {
         pendingDragRef.current = null;
-        onDragStart(p.e, p.id, "move");
+        onDragStart({ clientX: getClientX(moveEvent) }, p.id, "move");
       }
     };
 
@@ -64,9 +71,15 @@ export const BannerSegment: React.FC<BannerSegmentProps> = ({
 
     window.addEventListener("mousemove", handleMove);
     window.addEventListener("mouseup", handleUp);
+    window.addEventListener("touchmove", handleMove, { passive: false });
+    window.addEventListener("touchend", handleUp);
+    window.addEventListener("touchcancel", handleUp);
     return () => {
       window.removeEventListener("mousemove", handleMove);
       window.removeEventListener("mouseup", handleUp);
+      window.removeEventListener("touchmove", handleMove);
+      window.removeEventListener("touchend", handleUp);
+      window.removeEventListener("touchcancel", handleUp);
     };
   }, [onDragStart]);
 
@@ -103,9 +116,11 @@ export const BannerSegment: React.FC<BannerSegmentProps> = ({
         width: Math.max(width, 20),
         backgroundColor: color,
         cursor: "grab",
+        touchAction: "none",
       }}
       onClick={handleClick}
-      onMouseDown={handleMouseDown}
+      onMouseDown={handlePointerDown}
+      onTouchStart={handlePointerDown}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
@@ -142,7 +157,8 @@ export const BannerSegment: React.FC<BannerSegmentProps> = ({
           isHovered || isSelected ? "opacity-100" : "opacity-0"
         )}
         style={{ width: TRIM_HANDLE_WIDTH }}
-        onMouseDown={handleTrimEndMouseDown}
+        onMouseDown={(e) => handleTrimPointerDown(e, "trim-end")}
+        onTouchStart={(e) => handleTrimPointerDown(e, "trim-end")}
       />
     </div>
   );

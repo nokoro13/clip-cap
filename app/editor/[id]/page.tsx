@@ -3,7 +3,7 @@
 import { Player, PlayerRef } from "@remotion/player";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useParams } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen, ChartNoAxesGantt, Play, Pause } from "lucide-react";
 import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
@@ -890,6 +890,7 @@ export default function EditorPage() {
   const params = useParams();
   const searchParams = useSearchParams();
   const playerRef = useRef<PlayerRef>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
 
   const [videoUrl, setVideoUrl] = useState<string | null>(null);
   const [videoDuration, setVideoDuration] = useState(300); // Default 10 seconds at 30fps
@@ -948,10 +949,27 @@ export default function EditorPage() {
   const [bannerSegments, setBannerSegments] = useState<BannerSegment[]>([]);
   const [selectedBannerSegment, setSelectedBannerSegment] = useState<string | null>(null);
   const [leftPanelTab, setLeftPanelTab] = useState<"styling" | "subtitles" | "text" | "banners">("styling");
+  const [mobilePanelTab, setMobilePanelTab] = useState<
+    "" | "styling" | "subtitles" | "text" | "banners" | "timeline"
+  >("");
   const [collapsedTextTrackIds, setCollapsedTextTrackIds] = useState<Set<string>>(new Set());
   const [collapsedBannerTrackIds, setCollapsedBannerTrackIds] = useState<Set<string>>(new Set());
   const [bannerPresetPopoverTrackId, setBannerPresetPopoverTrackId] = useState<string | null>(null);
   const [bannerEditorMoreOptionsOpen, setBannerEditorMoreOptionsOpen] = useState(false);
+
+  // Sync isPlaying with Remotion player (for mobile play control below video)
+  useEffect(() => {
+    if (!playerRef?.current) return;
+    const player = playerRef.current;
+    const onPlay = () => setIsPlaying(true);
+    const onPause = () => setIsPlaying(false);
+    player.addEventListener("play", onPlay);
+    player.addEventListener("pause", onPause);
+    return () => {
+      player.removeEventListener("play", onPlay);
+      player.removeEventListener("pause", onPause);
+    };
+  }, [videoUrl, videoDuration]);
 
   // Load video and captions from URL params or localStorage
   useEffect(() => {
@@ -1558,9 +1576,12 @@ export default function EditorPage() {
     if (!resizingBottomPanel) return;
     document.body.style.cursor = "ns-resize";
     document.body.style.userSelect = "none";
+    document.body.style.touchAction = "none";
+    document.body.style.overscrollBehavior = "none";
     const getY = (e: MouseEvent | TouchEvent) =>
       "touches" in e ? (e as TouchEvent).touches[0].clientY : (e as MouseEvent).clientY;
     const onMove = (e: MouseEvent | TouchEvent) => {
+      if ("touches" in e) e.preventDefault();
       const start = bottomResizeStartRef.current;
       if (!start) return;
       const currentY = getY(e);
@@ -1578,6 +1599,8 @@ export default function EditorPage() {
       bottomResizeStartRef.current = null;
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      document.body.style.touchAction = "";
+      document.body.style.overscrollBehavior = "";
     };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
@@ -1592,6 +1615,8 @@ export default function EditorPage() {
       window.removeEventListener("touchcancel", onUp);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      document.body.style.touchAction = "";
+      document.body.style.overscrollBehavior = "";
     };
   }, [resizingBottomPanel]);
 
@@ -4207,61 +4232,80 @@ export default function EditorPage() {
           )}
         </aside>
 
-		  <aside
-          style={{
-            height: leftPanelCollapsed ? 48 : bottomPanelHeight,
-            maxHeight: leftPanelCollapsed ? 48 : "50vh",
-            transition: "height 0.2s ease-out",
-          }}
-          className="relative flex sm:hidden min-h-0 flex-shrink-0 flex-col overflow-hidden border-r border-border"
-        >
-          {/* Collapse/expand toggle - always visible */}
-          <Button
-            variant="ghost"
-            size="icon"
+		    <div
             className={cn(
-              "absolute top-2 z-20 shrink-0",
-              leftPanelCollapsed ? "left-1 right-1" : "left-1"
+              "flex sm:hidden flex-col min-h-0",
+              mobilePanelTab ? "flex-1" : "flex-none shrink-0"
             )}
-            onClick={() => setLeftPanelCollapsed((c) => !c)}
-            title={leftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
-            aria-label={leftPanelCollapsed ? "Expand sidebar" : "Collapse sidebar"}
           >
-            {leftPanelCollapsed ? (
-              <PanelBottomOpen key="open" className="size-4" />
-            ) : (
-              <PanelBottomClose key="close" className="size-4" />
-            )}
-          </Button>
-
-          {!leftPanelCollapsed && (
-            <>
           <Tabs
-            value={leftPanelTab}
-            onValueChange={(v) => setLeftPanelTab(v as "styling" | "subtitles" | "text")}
-            className="flex flex-1 flex-col-reverse overflow-hidden pt-10"
-				style={{flexDirection: "column-reverse"}}
+            value={mobilePanelTab || "styling"}
+            onValueChange={(v) => {
+              const tab = v as "styling" | "subtitles" | "text" | "banners" | "timeline";
+              setMobilePanelTab((prev) => (prev === tab ? "" : tab));
+            }}
+            className="flex flex-1 flex-col-reverse overflow-hidden min-h-0"
+            style={{ flexDirection: "column-reverse" }}
             orientation="horizontal"
-				activationMode="manual"
+            activationMode="manual"
           >
-            <TabsList variant="line" className="shrink-0 gap-4 w-full">
-              <TabsTrigger value="styling" className="border-none">
+            <TabsList variant="line" className="shrink-0 gap-4 w-full bg-background border-t border-border">
+              <TabsTrigger
+                value="styling"
+                className="border-none"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setMobilePanelTab((p) => (p === "styling" ? "" : "styling"));
+                }}
+              >
                 <Palette className="size-6" />
               </TabsTrigger>
-              <TabsTrigger value="subtitles" className="border-none">
+              <TabsTrigger
+                value="subtitles"
+                className="border-none"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setMobilePanelTab((p) => (p === "subtitles" ? "" : "subtitles"));
+                }}
+              >
                 <Captions className="size-6" />
               </TabsTrigger>
-              <TabsTrigger value="text" className="border-none">
+              <TabsTrigger
+                value="text"
+                className="border-none"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setMobilePanelTab((p) => (p === "text" ? "" : "text"));
+                }}
+              >
                 <Type className="size-6" />
               </TabsTrigger>
-              <TabsTrigger value="banners" className="border-none">
+              <TabsTrigger
+                value="banners"
+                className="border-none"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setMobilePanelTab((p) => (p === "banners" ? "" : "banners"));
+                }}
+              >
                 <Award className="size-6" />
               </TabsTrigger>
+              <TabsTrigger
+                value="timeline"
+                className="border-none"
+                onPointerDown={(e) => {
+                  e.preventDefault();
+                  setMobilePanelTab((p) => (p === "timeline" ? "" : "timeline"));
+                }}
+              >
+                <ChartNoAxesGantt className="size-6" />
+              </TabsTrigger>
             </TabsList>
-            <div className="relative flex-1 flex min-h-0 flex-col">
+            {mobilePanelTab ? (
+            <div className="relative flex flex-1 min-h-0 flex-col overflow-y-auto bg-background">
               <TabsContent
                 value="styling"
-                className="mt-0 flex flex-1 min-h-0 flex-col outline-none p-4 gap-4"
+                className="mt-0 flex flex-1 min-h-0 flex-col outline-none p-4 gap-4 h-max-content max-h-[50vh]"
               >
                 <Button
                   variant="outline"
@@ -5027,7 +5071,7 @@ export default function EditorPage() {
 
               <TabsContent
                 value="subtitles"
-                className="mt-0 outline-none p-4 overflow-auto"
+                className="mt-0 outline-none p-4 overflow-auto h-max-content max-h-[50vh]"
               >
                 <Label className="mb-2 text-muted-foreground">
                   Subtitles ({subtitles.length})
@@ -5111,7 +5155,7 @@ export default function EditorPage() {
 
               <TabsContent
                 value="text"
-                className="mt-0 outline-none p-4 overflow-auto"
+                className="mt-0 outline-none p-4 overflow-auto h-max-content max-h-[50vh]"
               >
                 <Label className="mb-2 text-muted-foreground">
                   Custom Text Overlays
@@ -5925,7 +5969,7 @@ export default function EditorPage() {
 
               <TabsContent
                 value="banners"
-                className="mt-0 outline-none p-4 overflow-auto"
+                className="mt-0 outline-none p-4 overflow-auto h-max-content max-h-[50vh]"
               >
                 <Label className="mb-2 text-muted-foreground">
                   Social Banners
@@ -6524,23 +6568,136 @@ export default function EditorPage() {
                   </p>
                 )}
               </TabsContent>
-            </div>
-          </Tabs>
 
-          {/* Resize handle - drag up/down to change panel height (top edge) */}
-          <div
-            role="separator"
-            aria-label="Resize panel height"
-            onMouseDown={handleBottomPanelResizeStart}
-            onTouchStart={handleBottomPanelResizeStart}
-            className={cn(
-              "absolute left-0 right-0 top-0 z-10 h-6 w-full cursor-ns-resize select-none border-t border-transparent transition-colors hover:border-primary/30 hover:bg-primary/10 touch-manipulation",
-              resizingBottomPanel && "border-primary/50 bg-primary/20"
-            )}
-          />
-            </>
-          )}
-        </aside>
+				  <TabsContent
+				  value="timeline"
+				  className="mt-0 outline-none px-0 overflow-auto h-max-content max-h-[50vh]"
+				  >
+				    <Timeline
+				      alwaysExpanded
+				      hidePlayButton
+				      subtitles={subtitles}
+				      setSubtitles={setSubtitles}
+				      selectedSubtitle={selectedSubtitle}
+				      setSelectedSubtitle={(id) => {
+				        setSelectedSubtitle(id);
+				        setSelectedVideoSegment(null);
+				        setSelectedTextSegment(null);
+				        setSelectedBannerSegment(null);
+				        if (id) {
+				          setLeftPanelTab("subtitles");
+				          setMobilePanelTab("subtitles");
+				        }
+				      }}
+				      videoSegments={videoSegments}
+				      setVideoSegments={setVideoSegments}
+				      deletedRanges={deletedRanges}
+				      setDeletedRanges={setDeletedRanges}
+				      selectedVideoSegment={selectedVideoSegment}
+				      setSelectedVideoSegment={(id) => {
+				        setSelectedVideoSegment(id);
+				        setSelectedSubtitle(null);
+				        setSelectedTextSegment(null);
+				        setSelectedBannerSegment(null);
+				      }}
+				      playerRef={playerRef}
+				      videoDuration={compositionDuration}
+				      fps={FPS}
+				      videoUrl={videoUrl}
+				      onSeek={handleSeek}
+				      onDeleteRequest={handleDeleteRequest}
+				      onDeleteTextSegment={(id) => {
+				        setCustomTextSegments((prev) => prev.filter((s) => s.id !== id));
+				        setSelectedTextSegment(null);
+				      }}
+				      onCropClick={() => {
+				        if (!videoUrl) return;
+				        if (videoSegments.length > 0) {
+				          const seg = selectedVideoSegment
+				            ? videoSegments.find((s) => s.id === selectedVideoSegment)
+				            : null;
+				          if (!seg) return;
+				          setCropDialogClip({
+				            url: seg.sourceVideoUrl,
+				            trimStartSeconds: seg.sourceStartFrame / FPS,
+				            trimEndSeconds: seg.sourceEndFrame / FPS,
+				            segmentId: seg.id,
+				          });
+				        } else {
+				          setCropDialogClip({
+				            url: videoUrl,
+				            trimStartSeconds: 0,
+				            trimEndSeconds: undefined,
+				          });
+				        }
+				        setShowCropDialog(true);
+				      }}
+				      onAddTextTrackClick={() => {
+				        setLeftPanelTab("text");
+				        setMobilePanelTab("text");
+				      }}
+				      setRawSegmentSubtitles={setRawSegmentSubtitles}
+				      setWordSubtitles={setWordSubtitles}
+				      customTextTracks={customTextTracks}
+				      setCustomTextTracks={setCustomTextTracks}
+				      customTextSegments={customTextSegments}
+				      setCustomTextSegments={setCustomTextSegments}
+				      selectedTextSegment={selectedTextSegment}
+				      setSelectedTextSegment={(id) => {
+				        setSelectedTextSegment(id);
+				        setSelectedSubtitle(null);
+				        setSelectedVideoSegment(null);
+				        setSelectedBannerSegment(null);
+				        if (id) {
+				          setLeftPanelTab("text");
+				          setMobilePanelTab("text");
+				          const seg = customTextSegments.find((s) => s.id === id);
+				          if (seg) {
+				            setCollapsedTextTrackIds((prev) => {
+				              const next = new Set(prev);
+				              next.delete(seg.trackId);
+				              return next;
+				            });
+				          }
+				        }
+				      }}
+				      onAddBannerClick={() => {
+				        setLeftPanelTab("banners");
+				        setMobilePanelTab("banners");
+				      }}
+				      onDeleteBannerSegment={(id) => {
+				        setBannerSegments((prev) => prev.filter((s) => s.id !== id));
+				        setSelectedBannerSegment(null);
+				      }}
+				      bannerTracks={bannerTracks}
+				      setBannerTracks={setBannerTracks}
+				      bannerSegments={bannerSegments}
+				      setBannerSegments={setBannerSegments}
+				      selectedBannerSegment={selectedBannerSegment}
+				      setSelectedBannerSegment={(id) => {
+				        setSelectedBannerSegment(id);
+				        setSelectedSubtitle(null);
+				        setSelectedVideoSegment(null);
+				        setSelectedTextSegment(null);
+				        if (id) {
+				          setLeftPanelTab("banners");
+				          setMobilePanelTab("banners");
+				          const seg = bannerSegments.find((s) => s.id === id);
+				          if (seg) {
+				            setCollapsedBannerTrackIds((prev) => {
+				              const next = new Set(prev);
+				              next.delete(seg.trackId);
+				              return next;
+				            });
+				          }
+				        }
+				      }}
+				    />
+				  </TabsContent>
+            </div>
+            ) : null}
+          </Tabs>
+			 </div>
 
 
         {/* Center - Video Preview */}
@@ -6575,6 +6732,31 @@ export default function EditorPage() {
               style={{ width: "100%", height: "100%" }}
               loop
             />
+          </div>
+          {/* Mobile play control - below video, above timeline in aside */}
+          <div className="flex sm:hidden w-full justify-center py-3 px-4">
+            <Button
+              variant="secondary"
+              size="lg"
+              className="h-12 w-12 rounded-full"
+              onClick={() => {
+                if (!playerRef.current) return;
+                if (isPlaying) {
+                  playerRef.current.pause();
+                } else {
+                  playerRef.current.play();
+                }
+              }}
+              disabled={!videoUrl}
+              title={isPlaying ? "Pause" : "Play"}
+              aria-label={isPlaying ? "Pause" : "Play"}
+            >
+              {isPlaying ? (
+                <Pause className="size-6" />
+              ) : (
+                <Play className="size-6" />
+              )}
+            </Button>
           </div>
           <VideoCropDialog
             open={showCropDialog}
@@ -6612,6 +6794,7 @@ export default function EditorPage() {
             trimStartSeconds={cropDialogClip?.trimStartSeconds ?? 0}
             trimEndSeconds={cropDialogClip?.trimEndSeconds}
           />
+			 <div className="hidden sm:flex sm:w-full">
           <Timeline
             subtitles={subtitles}
             setSubtitles={setSubtitles}
@@ -6730,6 +6913,7 @@ export default function EditorPage() {
               }
             }}
           />
+			 </div>
           <DeletionDialog
             open={showDeleteDialog}
             onOpenChange={setShowDeleteDialog}

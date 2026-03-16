@@ -29,6 +29,7 @@ import {
   framesToPixels,
   clamp,
   calculateZoomToFit,
+  getClientX,
 } from "./utils";
 import {
   removeSubtitlesInRangeAndShift,
@@ -74,8 +75,10 @@ export const Timeline: React.FC<TimelineProps> = ({
   setBannerSegments,
   selectedBannerSegment,
   setSelectedBannerSegment,
+  alwaysExpanded = false,
+  hidePlayButton = false,
 }) => {
-  const [isExpanded, setIsExpanded] = useState(false);
+  const [isExpanded, setIsExpanded] = useState(alwaysExpanded);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [isDraggingPlayhead, setIsDraggingPlayhead] = useState(false);
@@ -109,14 +112,15 @@ export const Timeline: React.FC<TimelineProps> = ({
 
   const currentFrame = playerRef ? syncedFrame : currentFrameProp;
 
-  // Draggable playhead: convert mouse X to frame and seek
+  // Draggable playhead: convert mouse/touch X to frame and seek
   useEffect(() => {
     if (!isDraggingPlayhead || !tracksRef.current) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
+      if ("touches" in e) e.preventDefault();
       if (!tracksRef.current) return;
       const rect = tracksRef.current.getBoundingClientRect();
-      const timelineX = e.clientX - rect.left + tracksRef.current.scrollLeft;
+      const timelineX = getClientX(e) - rect.left + tracksRef.current.scrollLeft;
       const frame = Math.round(
         clamp(
           pixelsToFrames(timelineX, fps, zoom),
@@ -127,19 +131,28 @@ export const Timeline: React.FC<TimelineProps> = ({
       onSeek(frame);
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setIsDraggingPlayhead(false);
       document.body.style.cursor = "";
       document.body.style.userSelect = "";
+      document.body.style.touchAction = "";
     };
 
     document.body.style.cursor = "ew-resize";
     document.body.style.userSelect = "none";
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    document.body.style.touchAction = "none";
+    window.addEventListener("mousemove", handlePointerMove);
+    window.addEventListener("mouseup", handlePointerUp);
+    window.addEventListener("touchmove", handlePointerMove, { passive: false });
+    window.addEventListener("touchend", handlePointerUp);
+    window.addEventListener("touchcancel", handlePointerUp);
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mousemove", handlePointerMove);
+      window.removeEventListener("mouseup", handlePointerUp);
+      window.removeEventListener("touchmove", handlePointerMove);
+      window.removeEventListener("touchend", handlePointerUp);
+      window.removeEventListener("touchcancel", handlePointerUp);
+      document.body.style.touchAction = "";
     };
   }, [isDraggingPlayhead, fps, zoom, videoDuration, onSeek]);
 
@@ -155,11 +168,12 @@ export const Timeline: React.FC<TimelineProps> = ({
   const timelineWidth = calculateTimelineWidth(videoDuration, fps, zoom);
 
   const handleDragStart = useCallback(
-    (e: React.MouseEvent, id: string, type: "move" | "trim-start" | "trim-end") => {
+    (e: React.MouseEvent | React.TouchEvent | { clientX: number }, id: string, type: "move" | "trim-start" | "trim-end") => {
       if (!tracksRef.current) return;
 
       const rect = tracksRef.current.getBoundingClientRect();
-      const startX = e.clientX - rect.left + tracksRef.current.scrollLeft;
+      const clientX = "clientX" in e ? e.clientX : ("touches" in e && e.touches[0] ? e.touches[0].clientX : 0);
+      const startX = clientX - rect.left + tracksRef.current.scrollLeft;
 
       const subtitle = subtitles.find((s) => s.id === id);
       const videoSegment = videoSegments.find((s) => s.id === id);
@@ -216,11 +230,12 @@ export const Timeline: React.FC<TimelineProps> = ({
   useEffect(() => {
     if (!dragState || !tracksRef.current) return;
 
-    const handleMouseMove = (e: MouseEvent) => {
+    const handlePointerMove = (e: MouseEvent | TouchEvent) => {
+      if ("touches" in e) e.preventDefault();
       if (!tracksRef.current) return;
 
       const rect = tracksRef.current.getBoundingClientRect();
-      const currentX = e.clientX - rect.left + tracksRef.current.scrollLeft;
+      const currentX = getClientX(e) - rect.left + tracksRef.current.scrollLeft;
       const deltaPixels = currentX - dragState.startX;
       const deltaFrames = pixelsToFrames(deltaPixels, fps, zoom);
 
@@ -390,17 +405,29 @@ export const Timeline: React.FC<TimelineProps> = ({
       }
     };
 
-    const handleMouseUp = () => {
+    const handlePointerUp = () => {
       setDragState(null);
       document.body.style.cursor = "";
+      document.body.style.touchAction = "";
+      document.body.style.userSelect = "";
     };
 
-    window.addEventListener("mousemove", handleMouseMove);
-    window.addEventListener("mouseup", handleMouseUp);
+    document.body.style.touchAction = "none";
+    document.body.style.userSelect = "none";
+    window.addEventListener("mousemove", handlePointerMove);
+    window.addEventListener("mouseup", handlePointerUp);
+    window.addEventListener("touchmove", handlePointerMove, { passive: false });
+    window.addEventListener("touchend", handlePointerUp);
+    window.addEventListener("touchcancel", handlePointerUp);
 
     return () => {
-      window.removeEventListener("mousemove", handleMouseMove);
-      window.removeEventListener("mouseup", handleMouseUp);
+      window.removeEventListener("mousemove", handlePointerMove);
+      window.removeEventListener("mouseup", handlePointerUp);
+      window.removeEventListener("touchmove", handlePointerMove);
+      window.removeEventListener("touchend", handlePointerUp);
+      window.removeEventListener("touchcancel", handlePointerUp);
+      document.body.style.touchAction = "";
+      document.body.style.userSelect = "";
     };
   }, [dragState, fps, zoom, videoDuration, setSubtitles, setVideoSegments, setCustomTextSegments, setBannerSegments]);
 
@@ -670,7 +697,8 @@ export const Timeline: React.FC<TimelineProps> = ({
     fps,
   ]);
 
-  const height = isExpanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT;
+  const effectiveExpanded = alwaysExpanded || isExpanded;
+  const height = effectiveExpanded ? EXPANDED_HEIGHT : COLLAPSED_HEIGHT;
 
   return (
     <div
@@ -684,19 +712,21 @@ export const Timeline: React.FC<TimelineProps> = ({
         style={{ height: HEADER_HEIGHT }}
       >
         <div className="flex items-center gap-2 max-w-[40%] overflow-x-auto">
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-7 w-7"
-            onClick={() => setIsExpanded(!isExpanded)}
-            title={isExpanded ? "Collapse Timeline" : "Expand Timeline"}
-          >
-            {isExpanded ? (
-              <ChevronDown className="h-4 w-4" />
-            ) : (
-              <ChevronUp className="h-4 w-4" />
-            )}
-          </Button>
+          {!alwaysExpanded && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-7 w-7"
+              onClick={() => setIsExpanded(!isExpanded)}
+              title={isExpanded ? "Collapse Timeline" : "Expand Timeline"}
+            >
+              {isExpanded ? (
+                <ChevronDown className="h-4 w-4" />
+              ) : (
+                <ChevronUp className="h-4 w-4" />
+              )}
+            </Button>
+          )}
 
           <Button
             variant="ghost"
@@ -786,7 +816,7 @@ export const Timeline: React.FC<TimelineProps> = ({
           )}
         </div>
 
-        {playerRef && (
+        {playerRef && !hidePlayButton && (
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center">
             <Button
               variant="ghost"
@@ -823,7 +853,7 @@ export const Timeline: React.FC<TimelineProps> = ({
       {/* Ruler + Tracks: max height so video player stays visible; sticky ruler when scrolling */}
       <div
         className="flex-1 min-h-0 overflow-hidden"
-        style={{ maxHeight: isExpanded ? TRACKS_MAX_HEIGHT : undefined }}
+        style={{ maxHeight: effectiveExpanded ? TRACKS_MAX_HEIGHT : undefined }}
       >
         <div
           ref={tracksRef}
@@ -851,6 +881,11 @@ export const Timeline: React.FC<TimelineProps> = ({
                   height: RULER_HEIGHT,
                 }}
                 onMouseDown={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setIsDraggingPlayhead(true);
+                }}
+                onTouchStart={(e) => {
                   e.preventDefault();
                   e.stopPropagation();
                   setIsDraggingPlayhead(true);

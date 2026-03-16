@@ -1,3 +1,17 @@
+/** Get clientX from mouse or touch event (for pointer-agnostic drag handling) */
+export function getClientX(e: MouseEvent | TouchEvent): number {
+  return "touches" in e && e.touches.length > 0
+    ? e.touches[0].clientX
+    : (e as MouseEvent).clientX;
+}
+
+/** Get clientX from React mouse or touch event */
+export function getReactClientX(e: React.MouseEvent | React.TouchEvent): number {
+  return "touches" in e && e.touches.length > 0
+    ? e.touches[0].clientX
+    : (e as React.MouseEvent).clientX;
+}
+
 /**
  * Convert frames to pixels based on zoom level
  */
