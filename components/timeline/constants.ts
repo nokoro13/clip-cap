@@ -2,7 +2,7 @@
 export const COLLAPSED_HEIGHT = 40;
 export const EXPANDED_HEIGHT = 'max-content';
 /** Max height for ruler + tracks area when expanded; prevents timeline from shrinking video player */
-export const TRACKS_MAX_HEIGHT = 240;
+export const TRACKS_MAX_HEIGHT = 'max-content';
 export const TRACK_HEIGHT = 48;
 export const RULER_HEIGHT = 32;
 export const HEADER_HEIGHT = 40;

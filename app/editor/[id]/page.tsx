@@ -3,7 +3,7 @@
 import { Player, PlayerRef } from "@remotion/player";
 import { useState, useRef, useCallback, useEffect } from "react";
 import { useSearchParams, useParams } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen, ChartNoAxesGantt, Play, Pause } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen, ChartNoAxesGantt, Play, Pause, GripHorizontal } from "lucide-react";
 import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
@@ -952,6 +952,16 @@ export default function EditorPage() {
   const [mobilePanelTab, setMobilePanelTab] = useState<
     "" | "styling" | "subtitles" | "text" | "banners" | "timeline"
   >("");
+  const [mobileTabsContentHeight, setMobileTabsContentHeight] = useState<number | null>(null);
+  const [resizingMobileTabs, setResizingMobileTabs] = useState(false);
+  const [skipMobileTabsCloseTransition, setSkipMobileTabsCloseTransition] = useState(false);
+  const mobileTabsContentRef = useRef<HTMLDivElement | null>(null);
+  const mobileTabsResizeStartRef = useRef<{ y: number; height: number } | null>(
+    null
+  );
+  const mobilePanelTabPrevRef = useRef<
+    "" | "styling" | "subtitles" | "text" | "banners" | "timeline"
+  >("styling");
   const [collapsedTextTrackIds, setCollapsedTextTrackIds] = useState<Set<string>>(new Set());
   const [collapsedBannerTrackIds, setCollapsedBannerTrackIds] = useState<Set<string>>(new Set());
   const [bannerPresetPopoverTrackId, setBannerPresetPopoverTrackId] = useState<string | null>(null);
@@ -970,6 +980,116 @@ export default function EditorPage() {
       player.removeEventListener("pause", onPause);
     };
   }, [videoUrl, videoDuration]);
+
+  // --- Mobile tabs resizable content (max 50vh) ---
+  const handleMobileTabsResizeStart = useCallback(
+    (e: React.MouseEvent | React.TouchEvent) => {
+      e.preventDefault();
+      setResizingMobileTabs(true);
+      const y = "touches" in e ? e.touches[0].clientY : e.clientY;
+      const currentHeight =
+        mobileTabsContentHeight ??
+        mobileTabsContentRef.current?.offsetHeight ??
+        Math.min(300, Math.floor(window.innerHeight * 0.5));
+
+      mobileTabsResizeStartRef.current = { y, height: currentHeight };
+
+      // First drag from auto mode locks in current pixel height
+      if (mobileTabsContentHeight === null) {
+        setMobileTabsContentHeight(currentHeight);
+      }
+    },
+    [mobileTabsContentHeight]
+  );
+
+  useEffect(() => {
+    if (!resizingMobileTabs) return;
+
+    document.body.style.cursor = "ns-resize";
+    document.body.style.userSelect = "none";
+    document.body.style.touchAction = "none";
+    document.body.style.overscrollBehavior = "none";
+
+    const getY = (e: MouseEvent | TouchEvent) =>
+      "touches" in e
+        ? (e as TouchEvent).touches[0].clientY
+        : (e as MouseEvent).clientY;
+
+    const onMove = (e: MouseEvent | TouchEvent) => {
+      if ("touches" in e) e.preventDefault();
+      const start = mobileTabsResizeStartRef.current;
+      if (!start || !mobileTabsContentRef.current) return;
+
+      const currentY = getY(e);
+      const delta = start.y - currentY; // drag up = increase height
+      const rawNextHeight = start.height + delta;
+
+      // If dragged fully closed, snap to 0 and close the panel (no transition)
+      if (rawNextHeight <= 0) {
+        setSkipMobileTabsCloseTransition(true);
+        setMobileTabsContentHeight(null);
+        setMobilePanelTab("");
+        setResizingMobileTabs(false);
+        mobileTabsResizeStartRef.current = null;
+        document.body.style.cursor = "";
+        document.body.style.userSelect = "";
+        document.body.style.touchAction = "";
+        document.body.style.overscrollBehavior = "";
+        return;
+      }
+
+      const maxHeight = Math.floor(window.innerHeight * 0.5); // hard cap at 50vh
+      const nextHeight = Math.min(
+        maxHeight,
+        Math.max(0, rawNextHeight)
+      );
+
+      setMobileTabsContentHeight(nextHeight);
+      mobileTabsResizeStartRef.current = { y: currentY, height: nextHeight };
+    };
+
+    const onUp = () => {
+      setResizingMobileTabs(false);
+      mobileTabsResizeStartRef.current = null;
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.body.style.touchAction = "";
+      document.body.style.overscrollBehavior = "";
+    };
+
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    window.addEventListener("touchmove", onMove, { passive: false });
+    window.addEventListener("touchend", onUp);
+    window.addEventListener("touchcancel", onUp);
+
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+      window.removeEventListener("touchmove", onMove);
+      window.removeEventListener("touchend", onUp);
+      window.removeEventListener("touchcancel", onUp);
+      document.body.style.cursor = "";
+      document.body.style.userSelect = "";
+      document.body.style.touchAction = "";
+      document.body.style.overscrollBehavior = "";
+    };
+  }, [resizingMobileTabs]);
+
+  // Reset to auto height when closing/switching mobile tab
+  useEffect(() => {
+    if (!mobilePanelTab) {
+      setMobileTabsContentHeight(null);
+      setSkipMobileTabsCloseTransition(false); // re-enable transition for next open/close
+    }
+  }, [mobilePanelTab]);
+
+  // Track previous mobile tab for smooth close transition (avoid flash)
+  useEffect(() => {
+    if (mobilePanelTab) {
+      mobilePanelTabPrevRef.current = mobilePanelTab;
+    }
+  }, [mobilePanelTab]);
 
   // Load video and captions from URL params or localStorage
   useEffect(() => {
@@ -1665,6 +1785,10 @@ export default function EditorPage() {
         // Subtitle + video: remove all subtitles in range, cut video, shift everything left
         const cutStart = segment.startFrame;
         const cutEnd = segment.endFrame;
+        // If the cut range is too small, do nothing to avoid zero-length segments
+        if (cutEnd - cutStart < 2) {
+          return;
+        }
         const newRange: DeletedRange = {
           id: `deleted-${Date.now()}`,
           startFrame: cutStart,
@@ -1972,7 +2096,7 @@ export default function EditorPage() {
                     <Label className="mb-2 text-muted-foreground">
                       Style Presets
                     </Label>
-                    <div className="grid md:grid-cols-2 grid-cols-1 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       {PRESET_STYLES.map((preset) => (
                         <Button
                           key={preset.id}
@@ -4235,11 +4359,11 @@ export default function EditorPage() {
 		    <div
             className={cn(
               "flex sm:hidden flex-col min-h-0",
-              mobilePanelTab ? "flex-1" : "flex-none shrink-0"
+              mobilePanelTab ? "" : "flex-none shrink-0"
             )}
           >
           <Tabs
-            value={mobilePanelTab || "styling"}
+            value={mobilePanelTab || mobilePanelTabPrevRef.current || "styling"}
             onValueChange={(v) => {
               const tab = v as "styling" | "subtitles" | "text" | "banners" | "timeline";
               setMobilePanelTab((prev) => (prev === tab ? "" : tab));
@@ -4249,10 +4373,10 @@ export default function EditorPage() {
             orientation="horizontal"
             activationMode="manual"
           >
-            <TabsList variant="line" className="shrink-0 gap-4 w-full bg-background border-t border-border">
+            <TabsList variant="none" className="shrink-0 gap-4 w-full bg-background my-2">
               <TabsTrigger
                 value="styling"
-                className="border-none"
+                className="border-none py-8 rounded-[50%]"
                 onPointerDown={(e) => {
                   e.preventDefault();
                   setMobilePanelTab((p) => (p === "styling" ? "" : "styling"));
@@ -4262,7 +4386,7 @@ export default function EditorPage() {
               </TabsTrigger>
               <TabsTrigger
                 value="subtitles"
-                className="border-none"
+                className="border-none py-8 rounded-[50%]"
                 onPointerDown={(e) => {
                   e.preventDefault();
                   setMobilePanelTab((p) => (p === "subtitles" ? "" : "subtitles"));
@@ -4272,7 +4396,7 @@ export default function EditorPage() {
               </TabsTrigger>
               <TabsTrigger
                 value="text"
-                className="border-none"
+                className="border-none py-8 rounded-[50%]"
                 onPointerDown={(e) => {
                   e.preventDefault();
                   setMobilePanelTab((p) => (p === "text" ? "" : "text"));
@@ -4282,7 +4406,7 @@ export default function EditorPage() {
               </TabsTrigger>
               <TabsTrigger
                 value="banners"
-                className="border-none"
+                className="border-none py-8 rounded-[50%]"
                 onPointerDown={(e) => {
                   e.preventDefault();
                   setMobilePanelTab((p) => (p === "banners" ? "" : "banners"));
@@ -4292,7 +4416,7 @@ export default function EditorPage() {
               </TabsTrigger>
               <TabsTrigger
                 value="timeline"
-                className="border-none"
+                className="border-none py-8 rounded-[50%]"
                 onPointerDown={(e) => {
                   e.preventDefault();
                   setMobilePanelTab((p) => (p === "timeline" ? "" : "timeline"));
@@ -4301,11 +4425,45 @@ export default function EditorPage() {
                 <ChartNoAxesGantt className="size-6" />
               </TabsTrigger>
             </TabsList>
-            {mobilePanelTab ? (
-            <div className="relative flex flex-1 min-h-0 flex-col overflow-y-auto bg-background">
+            <div
+              className={cn(
+                "flex flex-1 min-h-0 flex-col bg-background overflow-hidden",
+                !skipMobileTabsCloseTransition && "transition-[max-height] duration-300 ease-out",
+                !mobilePanelTab && "pointer-events-none"
+              )}
+              style={{
+                maxHeight: mobilePanelTab ? "calc(50vh + 48px)" : "0px",
+              }}
+            >
+              {/* Resize handle above tabs content */}
+              <div
+                role="separator"
+                aria-label="Resize tabs content - drag up or down"
+                onMouseDown={handleMobileTabsResizeStart}
+                onTouchStart={handleMobileTabsResizeStart}
+                className={cn(
+                  "shrink-0 cursor-ns-resize select-none border-b border-transparent transition-colors flex items-center justify-center touch-none [-webkit-tap-highlight-color:transparent]",
+                  resizingMobileTabs && "border-primary/50 bg-primary/10"
+                )}
+              >
+                <div className="flex flex-col gap-0.5 opacity-60" aria-hidden>
+                  <GripHorizontal/>
+                </div>
+              </div>
+
+              {/* Resizable / scrollable content area */}
+              <div
+                ref={mobileTabsContentRef}
+                className="shrink-0 flex flex-col overflow-y-auto"
+                style={
+                  mobileTabsContentHeight !== null
+                    ? { height: mobileTabsContentHeight }
+                    : { maxHeight: "50vh" }
+                }
+              >
               <TabsContent
                 value="styling"
-                className="mt-0 flex flex-1 min-h-0 flex-col outline-none p-4 gap-4 h-max-content max-h-[50vh]"
+                className="mt-0 flex flex-1 min-h-0 flex-col outline-none p-4 gap-4"
               >
                 <Button
                   variant="outline"
@@ -4325,7 +4483,7 @@ export default function EditorPage() {
                     <Label className="mb-2 text-muted-foreground">
                       Style Presets
                     </Label>
-                    <div className="grid md:grid-cols-2 grid-cols-1 gap-2">
+                    <div className="grid grid-cols-2 gap-2">
                       {PRESET_STYLES.map((preset) => (
                         <Button
                           key={preset.id}
@@ -5071,7 +5229,7 @@ export default function EditorPage() {
 
               <TabsContent
                 value="subtitles"
-                className="mt-0 outline-none p-4 overflow-auto h-max-content max-h-[50vh]"
+                className="mt-0 outline-none p-4 overflow-auto h-max-content"
               >
                 <Label className="mb-2 text-muted-foreground">
                   Subtitles ({subtitles.length})
@@ -5155,7 +5313,7 @@ export default function EditorPage() {
 
               <TabsContent
                 value="text"
-                className="mt-0 outline-none p-4 overflow-auto h-max-content max-h-[50vh]"
+                className="mt-0 outline-none p-4 overflow-auto h-max-content"
               >
                 <Label className="mb-2 text-muted-foreground">
                   Custom Text Overlays
@@ -5969,7 +6127,7 @@ export default function EditorPage() {
 
               <TabsContent
                 value="banners"
-                className="mt-0 outline-none p-4 overflow-auto h-max-content max-h-[50vh]"
+                className="mt-0 outline-none p-4 overflow-auto h-max-content"
               >
                 <Label className="mb-2 text-muted-foreground">
                   Social Banners
@@ -6571,11 +6729,12 @@ export default function EditorPage() {
 
 				  <TabsContent
 				  value="timeline"
-				  className="mt-0 outline-none px-0 overflow-auto h-max-content max-h-[50vh]"
+				  className="mt-0 outline-none px-0 overflow-auto h-max-content"
 				  >
 				    <Timeline
 				      alwaysExpanded
 				      hidePlayButton
+				      initialZoomMultiplier={2.5}
 				      subtitles={subtitles}
 				      setSubtitles={setSubtitles}
 				      selectedSubtitle={selectedSubtitle}
@@ -6584,10 +6743,7 @@ export default function EditorPage() {
 				        setSelectedVideoSegment(null);
 				        setSelectedTextSegment(null);
 				        setSelectedBannerSegment(null);
-				        if (id) {
-				          setLeftPanelTab("subtitles");
-				          setMobilePanelTab("subtitles");
-				        }
+				        if (id) playerRef.current?.seekTo(subtitles.find((s) => s.id === id)?.startFrame ?? 0);
 				      }}
 				      videoSegments={videoSegments}
 				      setVideoSegments={setVideoSegments}
@@ -6680,30 +6836,22 @@ export default function EditorPage() {
 				        setSelectedVideoSegment(null);
 				        setSelectedTextSegment(null);
 				        if (id) {
-				          setLeftPanelTab("banners");
-				          setMobilePanelTab("banners");
 				          const seg = bannerSegments.find((s) => s.id === id);
-				          if (seg) {
-				            setCollapsedBannerTrackIds((prev) => {
-				              const next = new Set(prev);
-				              next.delete(seg.trackId);
-				              return next;
-				            });
-				          }
+				          if (seg) playerRef.current?.seekTo(seg.startFrame);
 				        }
 				      }}
 				    />
 				  </TabsContent>
+              </div>
             </div>
-            ) : null}
           </Tabs>
 			 </div>
 
 
         {/* Center - Video Preview */}
-        <main className="flex min-h-0 flex-1 flex-col min-w-0 items-center justify-center bg-black/20 dark:bg-white/20 sm:flex-2">
+        <main className="flex min-h-0 flex-1 flex-col min-w-0 items-center justify-center bg-black/20 dark:bg-white/20 sm:flex-2 transition-[height] duration-300 ease-out sm:transition-none">
           <div
-            className="h-full max-h-full max-w-full m-4"
+            className="h-full max-h-full max-w-full mx-4 mt-4 sm:m-4 transition-[width,height] duration-300 ease-out sm:transition-none"
             style={{ aspectRatio: "9 / 16" }}
           >
             <Player
@@ -6734,9 +6882,9 @@ export default function EditorPage() {
             />
           </div>
           {/* Mobile play control - below video, above timeline in aside */}
-          <div className="flex sm:hidden w-full justify-center py-3 px-4">
+          <div className="flex sm:hidden w-full justify-center px-4">
             <Button
-              variant="secondary"
+              variant="ghost"
               size="lg"
               className="h-12 w-12 rounded-full"
               onClick={() => {

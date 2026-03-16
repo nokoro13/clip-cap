@@ -924,6 +924,11 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
         {useVideoSegments ? (
           videoSegments.map((segment) => {
             const durationFrames = segment.endFrame - segment.startFrame;
+            // Guard against zero- or negative-length segments that can be created
+            // by edge-case trims. Skip them so Remotion never receives 0 duration.
+            if (durationFrames <= 0) {
+              return null;
+            }
             const segTransform = segment.transform ?? videoTransform;
             const segHasTransform = hasCustomTransform(segTransform);
             const segWrapperStyle =

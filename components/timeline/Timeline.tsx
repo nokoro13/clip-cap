@@ -18,6 +18,8 @@ import {
   RULER_HEIGHT,
   TRACKS_MAX_HEIGHT,
   MIN_SEGMENT_FRAMES,
+  MIN_ZOOM,
+  MAX_ZOOM,
   DEFAULT_ZOOM,
   TRANSITION_DURATION,
   TEXT_TRACK_COLORS,
@@ -77,6 +79,7 @@ export const Timeline: React.FC<TimelineProps> = ({
   setSelectedBannerSegment,
   alwaysExpanded = false,
   hidePlayButton = false,
+  initialZoomMultiplier,
 }) => {
   const [isExpanded, setIsExpanded] = useState(alwaysExpanded);
   const [zoom, setZoom] = useState(DEFAULT_ZOOM);
@@ -160,10 +163,13 @@ export const Timeline: React.FC<TimelineProps> = ({
   useEffect(() => {
     if (containerRef.current) {
       const width = containerRef.current.clientWidth;
-      const fitZoom = calculateZoomToFit(videoDuration, fps, width);
-      setZoom(Math.max(10, Math.min(fitZoom, 200)));
+      let fitZoom = calculateZoomToFit(videoDuration, fps, width);
+      if (initialZoomMultiplier != null && alwaysExpanded && hidePlayButton) {
+        fitZoom *= initialZoomMultiplier;
+      }
+      setZoom(Math.max(MIN_ZOOM, Math.min(fitZoom, MAX_ZOOM)));
     }
-  }, [videoDuration, fps]);
+  }, [videoDuration, fps, initialZoomMultiplier, alwaysExpanded, hidePlayButton]);
 
   const timelineWidth = calculateTimelineWidth(videoDuration, fps, zoom);
 
@@ -711,7 +717,7 @@ export const Timeline: React.FC<TimelineProps> = ({
         className="relative flex items-center justify-between px-4 border-b border-border"
         style={{ height: HEADER_HEIGHT }}
       >
-        <div className="flex items-center gap-2 max-w-[40%] overflow-x-auto">
+        <div className="flex items-center gap-2">
           {!alwaysExpanded && (
             <Button
               variant="ghost"

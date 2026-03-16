@@ -203,6 +203,8 @@ export interface TimelineProps {
   alwaysExpanded?: boolean;
   /** When true, play/pause button is hidden (e.g. when play control is shown elsewhere on mobile) */
   hidePlayButton?: boolean;
+  /** When set (e.g. for mobile), multiplies the initial zoom so segments appear larger. Use with alwaysExpanded + hidePlayButton. */
+  initialZoomMultiplier?: number;
 }
 
 export interface DragState {

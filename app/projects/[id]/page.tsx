@@ -150,7 +150,6 @@ function ClipVideoPreview({
           ref={videoRef}
           src={videoUrl}
           className="size-full object-cover"
-          muted
           playsInline
           preload="metadata"
         />
@@ -456,8 +455,8 @@ export default function ProjectGalleryPage() {
     <div className="min-h-screen bg-background text-foreground">
       {/* Header - relative z-10 so back/edit stay clickable when many videos load */}
       <header className="relative z-10 border-b border-border">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4">
-          <div className="flex items-center gap-4">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 gap-2">
+          <div className="flex items-center gap-4 flex-1 overflow-hidden">
             <Link
               href={experienceId ? `/experiences/${experienceId}` : '/'}
               className="cursor-pointer text-muted-foreground hover:text-foreground"
@@ -474,7 +473,7 @@ export default function ProjectGalleryPage() {
               )}
             </div>
           </div>
-          <Button variant="outline">
+          <Button variant="outline" className="flex-1 max-w-max">
             <Download className="mr-2 size-4" />
             Get clip manually
           </Button>
@@ -486,9 +485,9 @@ export default function ProjectGalleryPage() {
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as ClipStatus)}
-          className="mb-6"
+          className="mb-12"
         >
-          <TabsList>
+          <TabsList className='flex flex-wrap'>
             <TabsTrigger value="all">All ({clipCounts.all})</TabsTrigger>
             <TabsTrigger value="approved">
               Approved ({clipCounts.approved})
@@ -506,7 +505,7 @@ export default function ProjectGalleryPage() {
         </Tabs>
 
         {/* Video Timeline Preview */}
-        <Card className="mb-6">
+        <Card className="mb-6 hidden sm:flex">
           <CardContent className="p-4">
             <div className="flex items-center gap-4">
               <div className="relative h-16 w-28 shrink-0 overflow-hidden rounded-lg bg-muted">
@@ -520,7 +519,6 @@ export default function ProjectGalleryPage() {
                   <video
                     src={videoUrl}
                     className="size-full object-cover"
-                    muted
                     playsInline
                     preload="metadata"
                   />
@@ -557,7 +555,7 @@ export default function ProjectGalleryPage() {
         </Card>
 
         {/* Clips Grid */}
-        <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+        <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
           {filteredClips.map((clip) => (
             <Card
               key={clip.id}
