@@ -53,9 +53,9 @@ In **Permissions** → **Bucket policy**:
 
 Replace `YOUR_BUCKET_NAME` with your bucket name. This makes only objects under `uploads/` publicly readable.
 
-## 4. IAM user for presigning
+## 4. IAM user for presigning and deleting
 
-Create an IAM user (or use an existing one) that can generate presigned URLs and allow public write for uploads:
+Create an IAM user (or use an existing one) that can generate presigned URLs and delete old uploads:
 
 1. IAM → Users → Create user (e.g. `clipcap-upload`).
 2. Attach a policy (inline or managed) like:
@@ -65,9 +65,12 @@ Create an IAM user (or use an existing one) that can generate presigned URLs and
   "Version": "2012-10-17",
   "Statement": [
     {
-      "Sid": "Presign",
+      "Sid": "UploadAndDelete",
       "Effect": "Allow",
-      "Action": ["s3:PutObject", "s3:PutObjectAcl"],
+      "Action": [
+        "s3:PutObject",
+        "s3:DeleteObject"
+      ],
       "Resource": "arn:aws:s3:::YOUR_BUCKET_NAME/uploads/*"
     }
   ]

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
-import { Captions, Layers, ExternalLink, Loader2, AlertCircle } from 'lucide-react';
+import { Captions, Layers, ExternalLink, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import {
   getProjectIndex,
   type ProjectIndexEntry,
@@ -12,6 +12,18 @@ import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import { cn } from '@/lib/utils';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from '@/components/ui/alert-dialog';
+import { deleteProject } from '@/lib/delete-project';
 
 const PROJECT_INDEX_KEY_PREFIX = 'clipcap-projects-';
 
@@ -35,11 +47,24 @@ function truncateTitle(title: string, maxLen: number): string {
 export function RecentProjectsGallery({ experienceId, className }: RecentProjectsGalleryProps) {
   const [entries, setEntries] = useState<ProjectIndexEntry[]>([]);
   const [mounted, setMounted] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const refresh = useCallback(() => {
     if (typeof window === 'undefined') return;
     const list = getProjectIndex(experienceId);
     setEntries(list);
+  }, [experienceId]);
+
+  const handleDelete = useCallback(async (projectId: string) => {
+    setDeletingId(projectId);
+    try {
+      await deleteProject(experienceId, projectId);
+    } catch (error) {
+      console.error('Failed to delete project:', error);
+      alert('Failed to delete project. Please try again.');
+    } finally {
+      setDeletingId(null);
+    }
   }, [experienceId]);
 
   useEffect(() => {
@@ -156,7 +181,7 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
                     <Progress value={entry.progress} className="mt-2 h-1.5" />
                   )}
                 </CardContent>
-                <CardFooter className="pb-4 px-4">
+                <CardFooter className="flex-col gap-2 pb-4 px-4">
                   {isProcessing || isError ? (
                     <Button variant="outline" size="sm" className="w-full" disabled>
                       {isProcessing ? 'Processing...' : 'Failed'}
@@ -169,6 +194,41 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
                       </Link>
                     </Button>
                   )}
+                  <AlertDialog>
+                    <AlertDialogTrigger asChild>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                        disabled={deletingId === entry.id}
+                      >
+                        {deletingId === entry.id ? (
+                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                        ) : (
+                          <Trash2 className="mr-1.5 size-3.5" />
+                        )}
+                        Delete
+                      </Button>
+                    </AlertDialogTrigger>
+                    <AlertDialogContent>
+                      <AlertDialogHeader>
+                        <AlertDialogTitle>Delete project?</AlertDialogTitle>
+                        <AlertDialogDescription>
+                          This will permanently delete "{truncateTitle(entry.title, 50)}" and remove
+                          all associated files. This action cannot be undone.
+                        </AlertDialogDescription>
+                      </AlertDialogHeader>
+                      <AlertDialogFooter>
+                        <AlertDialogCancel>Cancel</AlertDialogCancel>
+                        <AlertDialogAction
+                          onClick={() => handleDelete(entry.id)}
+                          className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                        >
+                          Delete
+                        </AlertDialogAction>
+                      </AlertDialogFooter>
+                    </AlertDialogContent>
+                  </AlertDialog>
                 </CardFooter>
               </Card>
             );

@@ -64,6 +64,15 @@ export function updateProjectInIndex(
   setProjectIndex(experienceId, next);
 }
 
+export function removeProjectFromIndex(
+  experienceId: string,
+  projectId: string
+): void {
+  const entries = getProjectIndex(experienceId);
+  const next = entries.filter((e) => e.id !== projectId);
+  setProjectIndex(experienceId, next);
+}
+
 /** Dispatch this event to notify galleries to refresh (e.g. after updating a processing project) */
 export const PROJECT_INDEX_UPDATE_EVENT = 'clipcap-project-index-update';
 
