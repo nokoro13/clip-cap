@@ -9,12 +9,36 @@ function openDb(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const request = indexedDB.open(DB_NAME, DB_VERSION);
     request.onerror = () => reject(request.error);
-    request.onsuccess = () => resolve(request.result);
     request.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result;
       if (!db.objectStoreNames.contains(STORE_NAME)) {
         db.createObjectStore(STORE_NAME, { keyPath: 'id' });
       }
+    };
+    request.onsuccess = () => {
+      const db = request.result;
+      // If the database exists but the expected store does not (can happen with
+      // older local versions), recreate the database so onupgradeneeded can run
+      // and define the correct schema. This only clears cached blobs, not
+      // server-side data.
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.close();
+        const deleteRequest = indexedDB.deleteDatabase(DB_NAME);
+        deleteRequest.onsuccess = () => {
+          const retryRequest = indexedDB.open(DB_NAME, DB_VERSION);
+          retryRequest.onerror = () => reject(retryRequest.error);
+          retryRequest.onupgradeneeded = (event) => {
+            const upgradedDb = (event.target as IDBOpenDBRequest).result;
+            if (!upgradedDb.objectStoreNames.contains(STORE_NAME)) {
+              upgradedDb.createObjectStore(STORE_NAME, { keyPath: 'id' });
+            }
+          };
+          retryRequest.onsuccess = () => resolve(retryRequest.result);
+        };
+        deleteRequest.onerror = () => reject(deleteRequest.error);
+        return;
+      }
+      resolve(db);
     };
   });
 }

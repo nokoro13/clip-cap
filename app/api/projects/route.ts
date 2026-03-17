@@ -160,6 +160,11 @@ export async function POST(request: Request) {
       )
       .limit(1);
 
+    const normalizedDuration =
+      typeof duration === 'number' && Number.isFinite(duration)
+        ? Math.round(duration)
+        : null;
+
     const row = {
       id,
       userId,
@@ -168,7 +173,7 @@ export async function POST(request: Request) {
       type: type as 'editor' | 'project',
       status: status as 'processing' | 'completed' | 'error',
       progress: typeof progress === 'number' ? progress : 0,
-      duration: typeof duration === 'number' ? duration : null,
+      duration: normalizedDuration,
       clipsCount: typeof clipsCount === 'number' ? clipsCount : null,
       s3Key: resolvedS3Key ?? null,
       videoUrl: typeof videoUrl === 'string' ? videoUrl : null,
