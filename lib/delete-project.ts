@@ -1,44 +1,15 @@
 /**
- * Delete a project: remove from localStorage, IndexedDB, and S3.
+ * Delete a project: call API (handles DB + S3), then clean up client storage.
+ * For gallery delete flow, use DELETE /api/projects/:id directly and clean up locally.
+ * This helper is for programmatic delete (e.g. from editor or other callers).
  */
 
-import { removeProjectFromIndex, notifyProjectIndexUpdate } from '@/lib/project-index';
+import { notifyProjectIndexUpdate } from '@/lib/project-index';
 
 /**
- * Delete the S3 object for a project's videoUrl.
+ * Delete video blob from IndexedDB. Exported for use when deleting via API.
  */
-async function deleteS3Video(videoUrl: string | null | undefined): Promise<void> {
-  if (!videoUrl) return;
-  
-  // Only delete if it's an S3 URL from our bucket
-  if (!videoUrl.includes('.s3.') && !videoUrl.includes('amazonaws.com')) {
-    return;
-  }
-
-  try {
-    // Extract the key from the S3 URL
-    // e.g. https://bucket.s3.region.amazonaws.com/uploads/uuid → uploads/uuid
-    const url = new URL(videoUrl);
-    const key = url.pathname.slice(1); // remove leading /
-
-    const res = await fetch('/api/upload/delete', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ key }),
-    });
-
-    if (!res.ok) {
-      console.error('Failed to delete S3 object:', await res.text());
-    }
-  } catch (err) {
-    console.error('Error deleting S3 video:', err);
-  }
-}
-
-/**
- * Delete video blob from IndexedDB.
- */
-async function deleteVideoBlob(projectId: string): Promise<void> {
+export async function deleteVideoBlob(projectId: string): Promise<void> {
   if (typeof window === 'undefined') return;
 
   try {
@@ -66,35 +37,25 @@ async function deleteVideoBlob(projectId: string): Promise<void> {
 }
 
 /**
- * Delete a project completely.
+ * Delete a project completely. Calls API (handles DB + S3), then cleans up client storage.
  */
 export async function deleteProject(experienceId: string, projectId: string): Promise<void> {
   if (typeof window === 'undefined') return;
 
-  // 1. Get project data to find S3 URL
-  const projectKey = `project-${projectId}`;
-  const stored = localStorage.getItem(projectKey);
-  let videoUrl: string | null = null;
-  if (stored) {
-    try {
-      const data = JSON.parse(stored);
-      videoUrl = data.videoUrl || null;
-    } catch {
-      // ignore
+  try {
+    const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+      method: 'DELETE',
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error((data as { error?: string }).error || 'Failed to delete project');
     }
+  } catch (err) {
+    throw err;
   }
 
-  // 2. Delete from localStorage
-  localStorage.removeItem(projectKey);
+  localStorage.removeItem(`project-${projectId}`);
   sessionStorage.removeItem(`video-${projectId}`);
-
-  // 3. Delete from IndexedDB
   await deleteVideoBlob(projectId);
-
-  // 4. Delete from S3
-  await deleteS3Video(videoUrl);
-
-  // 5. Remove from project index
-  removeProjectFromIndex(experienceId, projectId);
   notifyProjectIndexUpdate();
 }

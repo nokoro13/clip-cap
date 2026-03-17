@@ -27,7 +27,7 @@ import {
 } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { getVideoBlobUrl } from '@/lib/video-storage';
-import { addProjectToIndex, notifyProjectIndexUpdate } from '@/lib/project-index';
+import { saveProjectToApi } from '@/lib/project-api';
 import type { Caption } from '@remotion/captions';
 
 type ClipStatus = 'all' | 'approved' | 'rejected' | 'exported' | 'archived';
@@ -54,6 +54,7 @@ type ProjectData = {
   duration: number;
   channelName?: string;
   captions: Caption[];
+  segmentCaptions?: Caption[];
   clips: ViralClip[];
   fullTranscript: string;
   status: 'processing' | 'completed' | 'error';
@@ -203,10 +204,48 @@ export default function ProjectGalleryPage() {
       setError(null);
 
       const projectId = params.id as string;
+      let storedProject = localStorage.getItem(`project-${projectId}`);
+
+      try {
+        const apiRes = await fetch(`/api/projects/${projectId}`);
+        if (apiRes.ok) {
+          const apiProject = await apiRes.json();
+          const projectFromApi: Record<string, unknown> = {
+            id: apiProject.id,
+            title: apiProject.title,
+            videoUrl: apiProject.videoUrl,
+            duration: apiProject.duration ?? 0,
+            captions: apiProject.captions ?? [],
+            clips: (apiProject.clips ?? []).map((c: ViralClip) => ({ ...c, status: c.status || 'all' })),
+            fullTranscript: apiProject.fullTranscript ?? '',
+            status: 'completed',
+            createdAt: apiProject.createdAt ? new Date(apiProject.createdAt).getTime() : Date.now(),
+            youtubeVideoId: apiProject.youtubeVideoId,
+            experienceId: apiProject.experienceId,
+            thumbnailUrl: '',
+          };
+          const local = localStorage.getItem(`project-${projectId}`);
+          if (local) {
+            try {
+              const parsed = JSON.parse(local) as Record<string, unknown>;
+              if (parsed.clips && Array.isArray(parsed.clips)) {
+                projectFromApi.clips = (parsed.clips as ViralClip[]).map((c) => ({
+                  ...c,
+                  status: (c.status || 'all') as ClipStatus,
+                }));
+              }
+            } catch {
+              // ignore
+            }
+          }
+          storedProject = JSON.stringify(projectFromApi);
+        }
+      } catch (e) {
+        console.error('Failed to fetch project from API:', e);
+      }
 
       // Resolve video URL: prefer IndexedDB first (fresh blob URL after refresh). sessionStorage
       // can keep a stale blob URL after refresh that no longer plays.
-      const storedProject = localStorage.getItem(`project-${projectId}`);
       let resolvedVideoUrl: string | null = null;
       const fromIdb = await getVideoBlobUrl(projectId);
       if (fromIdb) {
@@ -302,16 +341,22 @@ export default function ProjectGalleryPage() {
           }
           if (experienceIdFromUrl) {
             setExperienceId(experienceIdFromUrl);
-            addProjectToIndex(experienceIdFromUrl, {
+            await saveProjectToApi(experienceIdFromUrl, {
               id: projectId,
+              experienceId: experienceIdFromUrl,
               title: projectData.title,
               type: 'project',
-              duration: projectData.duration,
-              clipsCount: projectData.clips?.length ?? 0,
               status: 'completed',
               progress: 100,
+              duration: projectData.duration,
+              clipsCount: projectData.clips?.length ?? 0,
+              videoUrl: projectData.videoUrl,
+              captions: projectData.captions,
+              segmentCaptions: projectData.segmentCaptions,
+              clips: projectData.clips,
+              fullTranscript: projectData.fullTranscript,
+              youtubeVideoId: projectData.youtubeVideoId,
             });
-            notifyProjectIndexUpdate();
           }
         } catch (e) {
           setError(e instanceof Error ? e.message : 'Failed to process video');
@@ -326,12 +371,30 @@ export default function ProjectGalleryPage() {
     loadProject();
   }, [params.id, searchParams]);
 
-  // Save project when clips change
+  // Save project when clips change (localStorage + API)
   useEffect(() => {
-    if (project) {
-      localStorage.setItem(`project-${project.id}`, JSON.stringify(project));
+    if (!project) return;
+    localStorage.setItem(`project-${project.id}`, JSON.stringify(project));
+    const expId = project.experienceId ?? experienceId;
+    if (expId) {
+      saveProjectToApi(expId, {
+        id: project.id,
+        experienceId: expId,
+        title: project.title,
+        type: 'project',
+        status: 'completed',
+        progress: 100,
+        duration: project.duration,
+        clipsCount: project.clips?.length ?? 0,
+        videoUrl: project.videoUrl,
+        captions: project.captions,
+        segmentCaptions: project.segmentCaptions,
+        clips: project.clips,
+        fullTranscript: project.fullTranscript,
+        youtubeVideoId: project.youtubeVideoId,
+      }).catch((e) => console.error('Failed to persist project to API:', e));
     }
-  }, [project]);
+  }, [project, experienceId]);
 
   const updateClipStatus = (clipId: string, status: ClipStatus) => {
     if (!project) return;

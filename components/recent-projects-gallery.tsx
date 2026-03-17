@@ -3,11 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { Captions, Layers, ExternalLink, Loader2, AlertCircle, Trash2 } from 'lucide-react';
-import {
-  getProjectIndex,
-  type ProjectIndexEntry,
-  PROJECT_INDEX_UPDATE_EVENT,
-} from '@/lib/project-index';
+import { type ProjectIndexEntry, PROJECT_INDEX_UPDATE_EVENT } from '@/lib/project-index';
 import { Card, CardContent, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -23,9 +19,7 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { deleteProject } from '@/lib/delete-project';
-
-const PROJECT_INDEX_KEY_PREFIX = 'clipcap-projects-';
+import { deleteVideoBlob } from '@/lib/delete-project';
 
 interface RecentProjectsGalleryProps {
   experienceId: string;
@@ -49,23 +43,46 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
   const [mounted, setMounted] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  const refresh = useCallback(() => {
+  const refresh = useCallback(async () => {
     if (typeof window === 'undefined') return;
-    const list = getProjectIndex(experienceId);
-    setEntries(list);
+    try {
+      const res = await fetch(`/api/projects?experienceId=${encodeURIComponent(experienceId)}`);
+      if (!res.ok) {
+        if (res.status === 401) {
+          setEntries([]);
+          return;
+        }
+        throw new Error('Failed to fetch projects');
+      }
+      const list = (await res.json()) as ProjectIndexEntry[];
+      setEntries(list);
+    } catch (error) {
+      console.error('Failed to fetch projects:', error);
+      setEntries([]);
+    }
   }, [experienceId]);
 
   const handleDelete = useCallback(async (projectId: string) => {
     setDeletingId(projectId);
     try {
-      await deleteProject(experienceId, projectId);
+      const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+        method: 'DELETE',
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Failed to delete project');
+      }
+      localStorage.removeItem(`project-${projectId}`);
+      sessionStorage.removeItem(`video-${projectId}`);
+      await deleteVideoBlob(projectId);
+      await refresh();
     } catch (error) {
       console.error('Failed to delete project:', error);
-      alert('Failed to delete project. Please try again.');
+      alert(error instanceof Error ? error.message : 'Failed to delete project. Please try again.');
     } finally {
       setDeletingId(null);
     }
-  }, [experienceId]);
+  }, [experienceId, refresh]);
 
   useEffect(() => {
     setMounted(true);
@@ -78,15 +95,9 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
 
   useEffect(() => {
     if (!mounted) return;
-    const key = `${PROJECT_INDEX_KEY_PREFIX}${experienceId}`;
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === key) refresh();
-    };
     const onIndexUpdate = () => refresh();
-    window.addEventListener('storage', onStorage);
     window.addEventListener(PROJECT_INDEX_UPDATE_EVENT, onIndexUpdate);
     return () => {
-      window.removeEventListener('storage', onStorage);
       window.removeEventListener(PROJECT_INDEX_UPDATE_EVENT, onIndexUpdate);
     };
   }, [mounted, experienceId, refresh]);

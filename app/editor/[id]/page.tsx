@@ -1193,6 +1193,7 @@ export default function EditorPage() {
   const mobilePanelTabPrevRef = useRef<
     "" | "styling" | "subtitles" | "text" | "banners" | "timeline"
   >("styling");
+  const apiSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [collapsedTextTrackIds, setCollapsedTextTrackIds] = useState<Set<string>>(new Set());
   const [collapsedBannerTrackIds, setCollapsedBannerTrackIds] = useState<Set<string>>(new Set());
   const [bannerPresetPopoverTrackId, setBannerPresetPopoverTrackId] = useState<string | null>(null);
@@ -1333,9 +1334,41 @@ export default function EditorPage() {
       const captionsParam = searchParams.get("captions");
       const durationParam = searchParams.get("duration");
 
-      // Check localStorage for project data
+      // Check API first, then localStorage for project data
       const projectId = params.id as string;
-      const storedProject = localStorage.getItem(`project-${projectId}`);
+      let storedProject = localStorage.getItem(`project-${projectId}`);
+
+      try {
+        const apiRes = await fetch(`/api/projects/${projectId}`);
+        if (apiRes.ok) {
+          const apiProject = await apiRes.json();
+          const projectFromApi: Record<string, unknown> = {
+            captions: apiProject.captions,
+            segmentCaptions: apiProject.segmentCaptions,
+            duration: apiProject.duration,
+            videoUrl: apiProject.videoUrl,
+            experienceId: apiProject.experienceId,
+            youtubeVideoId: apiProject.youtubeVideoId,
+            clips: apiProject.clips,
+            fullTranscript: apiProject.fullTranscript,
+            title: apiProject.title ?? "Untitled",
+          };
+          const local = localStorage.getItem(`project-${projectId}`);
+          if (local) {
+            try {
+              const parsed = JSON.parse(local) as Record<string, unknown>;
+              ["videoTransform", "videoAspectRatio", "videoSegments", "deletedRanges", "customTextTracks", "customTextSegments", "bannerTracks", "bannerSegments", "clipStartMs", "clipEndMs", "sourceProjectId"].forEach((k) => {
+                if (parsed[k] !== undefined) projectFromApi[k] = parsed[k];
+              });
+            } catch {
+              // ignore
+            }
+          }
+          storedProject = JSON.stringify(projectFromApi);
+        }
+      } catch (e) {
+        console.error("Failed to fetch project from API:", e);
+      }
 
       // Resolve video URL: prefer IndexedDB (fresh blob URL that survives refresh). Blob URLs in
       // sessionStorage/localStorage are invalid after refresh. For clips, video is stored under sourceProjectId.
@@ -1588,7 +1621,7 @@ export default function EditorPage() {
     }
   }, [videoUrl, videoDuration, videoStartFrom, params.id]);
 
-  // Persist videoTransform, videoAspectRatio, videoSegments, deletedRanges to project in localStorage
+  // Persist videoTransform, videoAspectRatio, videoSegments, deletedRanges to project in localStorage and API
   useEffect(() => {
     const projectId = params.id as string;
     if (!projectId || typeof localStorage === "undefined") return;
@@ -1596,23 +1629,52 @@ export default function EditorPage() {
     if (!stored) return;
     try {
       const project = JSON.parse(stored);
-      localStorage.setItem(
-        `project-${projectId}`,
-        JSON.stringify({
-          ...project,
-          videoTransform,
-          videoAspectRatio,
-          videoSegments,
-          deletedRanges,
-          customTextTracks,
-          customTextSegments,
-          bannerTracks,
-          bannerSegments,
-        })
-      );
+      const merged = {
+        ...project,
+        videoTransform,
+        videoAspectRatio,
+        videoSegments,
+        deletedRanges,
+        customTextTracks,
+        customTextSegments,
+        bannerTracks,
+        bannerSegments,
+      };
+      localStorage.setItem(`project-${projectId}`, JSON.stringify(merged));
+
+      if (merged.experienceId && merged.captions) {
+        if (apiSaveTimeoutRef.current) clearTimeout(apiSaveTimeoutRef.current);
+        const payload = {
+          id: projectId,
+          experienceId: merged.experienceId,
+          title: merged.title ?? "Untitled",
+          type: "editor",
+          status: "completed",
+          progress: 100,
+          duration: merged.duration,
+          videoUrl: merged.videoUrl,
+          captions: merged.captions,
+          segmentCaptions: merged.segmentCaptions,
+        };
+        apiSaveTimeoutRef.current = setTimeout(
+          () =>
+            fetch("/api/projects", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(payload),
+            }).catch((e) => console.error("Failed to persist project to API:", e)),
+          2000
+        );
+      }
     } catch {
       // ignore
     }
+    return () => {
+      if (apiSaveTimeoutRef.current) {
+        clearTimeout(apiSaveTimeoutRef.current);
+        apiSaveTimeoutRef.current = null;
+      }
+    };
   }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments]);
 
   // Load video dimensions when videoUrl changes so 9:16 is detected for crop
