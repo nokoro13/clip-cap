@@ -59,7 +59,7 @@ export const ZoomControls: React.FC<ZoomControlsProps> = ({
       <Button
         variant="ghost"
         size="icon"
-        className="h-7 w-7"
+        className="h-7 w-7 hidden sm:inline-flex"
         onClick={handleZoomToFit}
         title="Zoom to Fit"
       >

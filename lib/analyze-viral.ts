@@ -75,6 +75,23 @@ Clip Requirements
 - QUALITY: Each clip must be self-contained and satisfying to watch independently.
 
 ═══════════════════════════════════════════════════════════════
+DIALOG AND CONTENT DENSITY REQUIREMENTS
+═══════════════════════════════════════════════════════════════
+
+Every clip MUST contain substantial spoken content:
+- MINIMUM 12 words of actual dialog in the segment
+- REJECT clips that are primarily silence, music, or ambient sound
+- REJECT clips where people are not actively speaking for most of the duration
+- Calculate: word count ÷ duration in seconds should be ≥ 1.0 words/second minimum
+
+Before selecting a clip, verify:
+1. Does this segment have continuous, meaningful dialog?
+2. Is the speaking density sufficient (not just occasional words)?
+3. Would this clip work without visuals (podcast test)?
+
+NEVER select segments with sparse dialog, long pauses, or mostly non-speech.
+
+═══════════════════════════════════════════════════════════════
 Topic Selection and Preferences
 ═══════════════════════════════════════════════════════════════
 
@@ -85,10 +102,15 @@ When user specifies topics (e.g., educational, controversial, funny, wealth, ins
 - Find clips matching these preferences, but don't force weak matches
 
 When "auto" is selected:
-- Use a balanced mix of ALL topic types: educational, controversial, funny, wealth, inspirational, story
-- Bias toward topics that appear more frequently or prominently in the content
-- Still prioritize virality and engagement over rigid topic distribution
-- STILL aim for minimum 8 clips by drawing from whichever topics have the strongest moments
+MANDATORY DISTRIBUTION for 8+ clips:
+- MINIMUM 2 clips from at least 3 different topic categories
+- Scan entire video for strongest moments in: funny, educational, controversial, story, inspirational, wealth
+- Ranking algorithm: Within each topic, rank by virality score; select top moments across topics
+- If a topic category has weak content (<60 virality), substitute with next strongest category
+- Aim for 8-12 clips total using this distribution
+
+Example distribution for 8 clips: 2 funny, 2 educational, 2 story, 1 controversial, 1 inspirational
+Example distribution for 10 clips: 2 funny, 2 educational, 2 story, 2 controversial, 1 inspirational, 1 wealth
 
 Available topic categories:
 - "educational": Teaching, explaining, informative content
@@ -97,6 +119,21 @@ Available topic categories:
 - "wealth": Money, success, luxury, business insights
 - "inspirational": Motivational, uplifting, personal growth
 - "story": Narratives, anecdotes, personal experiences, interesting tales
+
+═══════════════════════════════════════════════════════════════
+TITLE AND DESCRIPTION GENERATION PROCESS
+═══════════════════════════════════════════════════════════════
+
+For each clip, follow this exact process:
+Step 1: Note the exact startSeconds and endSeconds for the clip
+Step 2: Extract ONLY the transcript words that fall within that time range
+Step 3: Read those specific words carefully
+Step 4: Write title summarizing ONLY what you just read in Step 3
+Step 5: Write reason describing ONLY the content from Step 3
+
+FORBIDDEN: Using content from outside the clip's time boundaries
+FORBIDDEN: Generic titles like "Interesting Discussion" or "Great Moment"
+REQUIRED: Specific references to what is actually said in the segment
 
 ═══════════════════════════════════════════════════════════════
 Output Format
@@ -123,8 +160,8 @@ Return ONLY a JSON array with this structure:
   }
 ]
 
-Only include clips with viralityScore >= 65.
-Remember: Aim for AT LEAST 8 clips. Scan the entire transcript thoroughly.
+Include clips with viralityScore >= 60. Prefer 65+ when possible, but include 60-64 to ensure you reach the minimum clip count. Only include 55-59 if absolutely needed to reach 8+ clips. Never include clips below 55.
+Remember: Aim for AT LEAST 8 clips (10+ for videos over 10 minutes). Scan the entire transcript thoroughly—longer videos have many more viable moments.
 No other text outside the JSON array.`;
 
 function formatSeconds(seconds: number): string {
@@ -175,13 +212,87 @@ function buildCaptionsFromSegments(
 function extractTranscriptSegment(
   captions: Caption[],
   startMs: number,
-  endMs: number
+  endMs: number,
+  bufferMs = 0
 ): string {
+  const from = startMs - bufferMs;
+  const to = endMs + bufferMs;
   return captions
-    .filter((c) => c.startMs >= startMs && c.endMs <= endMs)
+    .filter((c) => c.endMs > from && c.startMs < to)
     .map((c) => c.text)
     .join(' ')
     .trim();
+}
+
+const MIN_WORDS_PER_CLIP = 12;
+const MIN_WORDS_PER_SECOND = 1.0;
+const TIMESTAMP_BUFFER_MS = 500;
+
+const TITLE_CORRECTION_PROMPT = `You are a precise editor. For each clip, you will receive the exact transcript (what was actually said). Your job is to generate an accurate title and description that match the transcript EXACTLY.
+
+Rules:
+- Title: Concise (under 80 chars), specific to what is said in the transcript
+- Description (reason): 1-2 sentences summarizing the actual content
+- Use ONLY information from the transcript—no assumptions or content from elsewhere
+- Be specific: reference key phrases, topics, or moments from the transcript
+
+Return a JSON array with one object per clip: [{"title": "...", "reason": "..."}]
+Same order as input. No other text.`;
+
+/** Uses the actual transcript to correct any title/description mismatches. */
+async function correctClipTitlesAndDescriptions(
+  clips: Array<{ id: string; title: string; startMs: number; endMs: number; viralityScore: number; reason: string; transcript: string; topic?: string }>
+): Promise<typeof clips> {
+  if (clips.length === 0) return clips;
+
+  const transcriptList = clips
+    .map((c, i) => `Clip ${i + 1} transcript: "${c.transcript}"`)
+    .join('\n\n');
+
+  try {
+    const response = await openai.chat.completions.create({
+      model: 'gpt-4o-mini',
+      messages: [
+        { role: 'system', content: TITLE_CORRECTION_PROMPT },
+        {
+          role: 'user',
+          content: `Generate accurate title and reason for each clip based ONLY on its transcript:\n\n${transcriptList}`,
+        },
+      ],
+      temperature: 0.3,
+      max_tokens: 2000,
+    });
+
+    const content = response.choices[0]?.message?.content;
+    if (!content) return clips;
+
+    const match = content.match(/\[[\s\S]*\]/);
+    if (!match) return clips;
+
+    const corrections: Array<{ title: string; reason: string }> = JSON.parse(match[0]);
+    if (!Array.isArray(corrections) || corrections.length !== clips.length) return clips;
+
+    return clips.map((clip, i) => {
+      const corr = corrections[i];
+      if (corr?.title && corr?.reason) {
+        return { ...clip, title: corr.title.trim(), reason: corr.reason.trim() };
+      }
+      return clip;
+    });
+  } catch {
+    return clips;
+  }
+}
+
+/** Returns true if the clip has sufficient dialog density. */
+function hasSufficientDialog(
+  transcript: string,
+  durationSec: number
+): boolean {
+  const wordCount = transcript.split(/\s+/).filter(Boolean).length;
+  if (wordCount < MIN_WORDS_PER_CLIP) return false;
+  if (durationSec > 0 && wordCount / durationSec < MIN_WORDS_PER_SECOND) return false;
+  return true;
 }
 
 export type ViralAnalysisResult = {
@@ -200,6 +311,7 @@ export type ViralAnalysisResult = {
     viralityScore: number;
     reason: string;
     transcript: string;
+    topic?: string;
   }>;
   duration: number;
   fullTranscript: string;
@@ -333,20 +445,25 @@ export async function analyzeViralFromInput(
     .map((c) => `[${formatSeconds(c.startMs / 1000)}] ${c.text}`)
     .join('\n');
 
+  const totalWords = captions.map((c) => c.text).join(' ').split(/\s+/).filter(Boolean).length;
+  const wordsPerMinute = duration > 0 ? Math.round((totalWords / duration) * 60) : 0;
+
   const topicInstruction =
     topics && topics.length > 0 && topics[0] !== 'auto'
       ? `\nTopic preferences (priority order, #1 most important): ${topics.map((t: string, i: number) => `#${i + 1} ${t}`).join(', ')}. Prioritize clips matching these topics; if a topic has no strong moments, favor other selected topics.`
       : '';
 
+  const targetClips = duration >= 600 ? '10-15' : 'at least 8';
   const userPrompt = `Video Duration: ${formatSeconds(duration)} (${duration} seconds)
+Transcript summary: ${totalWords} total words (~${wordsPerMinute} words/min). Each clip MUST have at least 12 words and ≥1.0 words/second—avoid segments with sparse dialog.
 
 Transcript:
 ${transcriptWithTimestamps}
 ${topicInstruction}
 
-Find up to 15-20 viral moments from this content. Only include clips that score 65 or higher. For each clip: start when the topic begins, end ONLY when the topic is finished. If people are still talking about the subject, do NOT end the clip—extend it until they've moved on or concluded. Never cut mid-topic. Assign each clip a topic (educational, controversial, funny, wealth, inspirational, or story).
+Find ${targetClips} viral moments from this content. Include clips scoring 60 or higher. For each clip: start when the topic begins, end ONLY when the topic is finished. If people are still talking about the subject, do NOT end the clip—extend it until they've moved on or concluded. Never cut mid-topic. Assign each clip a topic (educational, controversial, funny, wealth, inspirational, or story).
 
-CRITICAL for title and reason: Read the transcript text for each clip's time range. The title and reason must accurately summarize what is actually said in that segment. Do not use titles or descriptions from other parts of the video. If the clip is about X, the title and reason must describe X.`;
+CRITICAL for title and reason: Follow the TITLE AND DESCRIPTION GENERATION PROCESS. Read ONLY the transcript words within each clip's time range. The title and reason must accurately summarize what is actually said in that segment. Do not use titles or descriptions from other parts of the video.`;
 
   const gptResponse = await openai.chat.completions.create({
     model: 'gpt-4o',
@@ -354,8 +471,8 @@ CRITICAL for title and reason: Read the transcript text for each clip's time ran
       { role: 'system', content: VIRAL_DETECTION_PROMPT },
       { role: 'user', content: userPrompt },
     ],
-    temperature: 0.7,
-    max_tokens: 6000,
+    temperature: 0.5,
+    max_tokens: 8000,
   });
 
   const content = gptResponse.choices[0]?.message?.content;
@@ -377,18 +494,62 @@ CRITICAL for title and reason: Read the transcript text for each clip's time ran
     topic?: string;
   }> = JSON.parse(jsonMatch[0]);
 
-  const MIN_VIRALITY_SCORE = 65;
   const MIN_CLIP_SECONDS = 10;
   const MAX_CLIP_SECONDS = 90;
+  const TARGET_MIN_CLIPS = duration >= 600 ? 10 : 8;
 
-  const filteredMoments = moments
-    .filter((m) => m.viralityScore >= MIN_VIRALITY_SCORE)
-    .filter((m) => {
-      const durationSec = m.endSeconds - m.startSeconds;
-      return durationSec >= MIN_CLIP_SECONDS && durationSec <= MAX_CLIP_SECONDS;
-    });
+  const scoreThresholds = [60, 55] as const;
 
-  const clips = filteredMoments.map((moment, index) => ({
+  let filteredMoments: typeof moments = [];
+  for (const minScore of scoreThresholds) {
+    filteredMoments = moments
+      .filter((m) => m.viralityScore >= minScore)
+      .filter((m) => {
+        const durationSec = m.endSeconds - m.startSeconds;
+        return durationSec >= MIN_CLIP_SECONDS && durationSec <= MAX_CLIP_SECONDS;
+      });
+
+    const withTranscript = filteredMoments.map((m) => ({
+      moment: m,
+      transcript: extractTranscriptSegment(
+        captions,
+        m.startSeconds * 1000,
+        m.endSeconds * 1000,
+        TIMESTAMP_BUFFER_MS,
+      ),
+      durationSec: m.endSeconds - m.startSeconds,
+    }));
+
+    const validMoments = withTranscript.filter(({ transcript, durationSec }) =>
+      hasSufficientDialog(transcript, durationSec)
+    );
+
+    const rejected = withTranscript.filter(
+      ({ transcript, durationSec }) => !hasSufficientDialog(transcript, durationSec)
+    );
+    if (rejected.length > 0) {
+      console.warn(
+        `[analyze-viral] Rejected ${rejected.length} clip(s) for insufficient dialog:`,
+        rejected.map((r) => ({
+          start: r.moment.startSeconds,
+          end: r.moment.endSeconds,
+          wordCount: r.transcript.split(/\s+/).filter(Boolean).length,
+          durationSec: r.durationSec,
+        }))
+      );
+    }
+
+    filteredMoments = validMoments.map(({ moment }) => moment);
+
+    if (filteredMoments.length >= TARGET_MIN_CLIPS) break;
+    if (minScore === scoreThresholds[scoreThresholds.length - 1]) {
+      console.warn(
+        `[analyze-viral] Only ${filteredMoments.length} clips met requirements (target: ${TARGET_MIN_CLIPS})`
+      );
+    }
+  }
+
+  let clips = filteredMoments.map((moment, index) => ({
     id: `clip-${Date.now()}-${index}`,
     title: moment.title,
     startMs: moment.startSeconds * 1000,
@@ -402,6 +563,9 @@ CRITICAL for title and reason: Read the transcript text for each clip's time ran
     ),
     topic: moment.topic ?? undefined,
   }));
+
+  const correctedClips = await correctClipTitlesAndDescriptions(clips);
+  clips = correctedClips.map((c) => ({ ...c, topic: c.topic ?? undefined }));
 
   return {
     captions,
