@@ -82,6 +82,7 @@ export async function GET(
       fullTranscript: p.fullTranscript,
       youtubeVideoId: p.youtubeVideoId,
       experienceId: p.experienceId,
+      editorState: p.editorState,
       createdAt: p.createdAt,
     });
   } catch (err) {

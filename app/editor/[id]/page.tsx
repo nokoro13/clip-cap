@@ -2,9 +2,8 @@
 
 import { Player, PlayerRef } from "@remotion/player";
 import { useState, useRef, useCallback, useEffect } from "react";
-import { useSearchParams, useParams } from "next/navigation";
+import { useSearchParams, useParams, useRouter } from "next/navigation";
 import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen, ChartNoAxesGantt, Play, Pause, GripHorizontal } from "lucide-react";
-import Link from "next/link";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
   SubtitleComposition,
@@ -69,6 +68,16 @@ import {
   updateDeletedRangesAfterCut,
 } from "@/lib/timeline-state";
 import { VideoCropDialog } from "@/components/video-crop-dialog";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 
 const FPS = 30;
 
@@ -1194,6 +1203,10 @@ export default function EditorPage() {
     "" | "styling" | "subtitles" | "text" | "banners" | "timeline"
   >("styling");
   const apiSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const apiSavePayloadRef = useRef<object | null>(null);
+  const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
+  const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const router = useRouter();
   const [collapsedTextTrackIds, setCollapsedTextTrackIds] = useState<Set<string>>(new Set());
   const [collapsedBannerTrackIds, setCollapsedBannerTrackIds] = useState<Set<string>>(new Set());
   const [bannerPresetPopoverTrackId, setBannerPresetPopoverTrackId] = useState<string | null>(null);
@@ -1352,7 +1365,20 @@ export default function EditorPage() {
             clips: apiProject.clips,
             fullTranscript: apiProject.fullTranscript,
             title: apiProject.title ?? "Untitled",
+            editorState: apiProject.editorState,
           };
+          // Expand editorState to top level so video-segments effect and other code can read them
+          if (apiProject.editorState && typeof apiProject.editorState === "object") {
+            const es = apiProject.editorState as Record<string, unknown>;
+            if (es.videoSegments !== undefined) projectFromApi.videoSegments = es.videoSegments;
+            if (es.deletedRanges !== undefined) projectFromApi.deletedRanges = es.deletedRanges;
+            if (es.videoTransform !== undefined) projectFromApi.videoTransform = es.videoTransform;
+            if (es.videoAspectRatio !== undefined) projectFromApi.videoAspectRatio = es.videoAspectRatio;
+            if (es.customTextTracks !== undefined) projectFromApi.customTextTracks = es.customTextTracks;
+            if (es.customTextSegments !== undefined) projectFromApi.customTextSegments = es.customTextSegments;
+            if (es.bannerTracks !== undefined) projectFromApi.bannerTracks = es.bannerTracks;
+            if (es.bannerSegments !== undefined) projectFromApi.bannerSegments = es.bannerSegments;
+          }
           const local = localStorage.getItem(`project-${projectId}`);
           if (local) {
             try {
@@ -1490,29 +1516,44 @@ export default function EditorPage() {
             setSourceProjectId(project.sourceProjectId);
           }
 
-          // Load video transform and aspect ratio
-          if (project.videoTransform) {
-            setVideoTransform(project.videoTransform);
-          }
-          if (
-            typeof project.videoAspectRatio === "number" &&
-            project.videoAspectRatio > 0
-          ) {
-            setVideoAspectRatio(project.videoAspectRatio);
-          }
-
-          // Load custom text tracks and segments
-          if (project.customTextTracks && Array.isArray(project.customTextTracks)) {
-            setCustomTextTracks(project.customTextTracks);
-          }
-          if (project.customTextSegments && Array.isArray(project.customTextSegments)) {
-            setCustomTextSegments(project.customTextSegments);
-          }
-          if (project.bannerTracks && Array.isArray(project.bannerTracks)) {
-            setBannerTracks(project.bannerTracks);
-          }
-          if (project.bannerSegments && Array.isArray(project.bannerSegments)) {
-            setBannerSegments(project.bannerSegments);
+          // Load editor state from API (takes precedence over flat fields)
+          if (project.editorState) {
+            const es = project.editorState as Record<string, unknown>;
+            if (es.subtitleStyle) setStyle(es.subtitleStyle as SubtitleStyle);
+            if (es.subtitleMode) setSubtitleMode(es.subtitleMode as SubtitleMode);
+            if (es.highlightColor) setHighlightColor(String(es.highlightColor));
+            if (typeof es.maxWordsPerSegment === "number") setMaxWordsPerSegment(es.maxWordsPerSegment);
+            if (es.videoTransform) setVideoTransform(es.videoTransform as { scale: number; offsetX: number; offsetY: number });
+            if (typeof es.videoAspectRatio === "number" && es.videoAspectRatio > 0) setVideoAspectRatio(es.videoAspectRatio);
+            if (es.videoSegments && Array.isArray(es.videoSegments)) setVideoSegments(es.videoSegments as VideoSegment[]);
+            if (es.deletedRanges && Array.isArray(es.deletedRanges)) setDeletedRanges(es.deletedRanges as DeletedRange[]);
+            if (es.customTextTracks && Array.isArray(es.customTextTracks)) setCustomTextTracks(es.customTextTracks as CustomTextTrack[]);
+            if (es.customTextSegments && Array.isArray(es.customTextSegments)) setCustomTextSegments(es.customTextSegments as CustomTextSegment[]);
+            if (es.bannerTracks && Array.isArray(es.bannerTracks)) setBannerTracks(es.bannerTracks as BannerTrack[]);
+            if (es.bannerSegments && Array.isArray(es.bannerSegments)) setBannerSegments(es.bannerSegments as BannerSegment[]);
+          } else {
+            // Fallback: load from flat fields (legacy / localStorage)
+            if (project.videoTransform) {
+              setVideoTransform(project.videoTransform);
+            }
+            if (
+              typeof project.videoAspectRatio === "number" &&
+              project.videoAspectRatio > 0
+            ) {
+              setVideoAspectRatio(project.videoAspectRatio);
+            }
+            if (project.customTextTracks && Array.isArray(project.customTextTracks)) {
+              setCustomTextTracks(project.customTextTracks);
+            }
+            if (project.customTextSegments && Array.isArray(project.customTextSegments)) {
+              setCustomTextSegments(project.customTextSegments);
+            }
+            if (project.bannerTracks && Array.isArray(project.bannerTracks)) {
+              setBannerTracks(project.bannerTracks);
+            }
+            if (project.bannerSegments && Array.isArray(project.bannerSegments)) {
+              setBannerSegments(project.bannerSegments);
+            }
           }
         } catch (e) {
           console.error("Failed to parse stored project:", e);
@@ -1655,14 +1696,34 @@ export default function EditorPage() {
           videoUrl: merged.videoUrl,
           captions: merged.captions,
           segmentCaptions: merged.segmentCaptions,
+          editorState: {
+            subtitleStyle: style,
+            subtitleMode,
+            highlightColor,
+            maxWordsPerSegment,
+            videoTransform,
+            videoAspectRatio,
+            videoSegments,
+            deletedRanges,
+            customTextTracks,
+            customTextSegments,
+            bannerTracks,
+            bannerSegments,
+          },
         };
+        apiSavePayloadRef.current = payload;
+        setHasUnsavedChanges(true);
         apiSaveTimeoutRef.current = setTimeout(
           () =>
             fetch("/api/projects", {
               method: "POST",
               headers: { "Content-Type": "application/json" },
               body: JSON.stringify(payload),
-            }).catch((e) => console.error("Failed to persist project to API:", e)),
+            })
+              .then((res) => {
+                if (res.ok) setHasUnsavedChanges(false);
+              })
+              .catch((e) => console.error("Failed to persist project to API:", e)),
           2000
         );
       }
@@ -1675,7 +1736,68 @@ export default function EditorPage() {
         apiSaveTimeoutRef.current = null;
       }
     };
-  }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments]);
+  }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments, style, subtitleMode, highlightColor, maxWordsPerSegment]);
+
+  // Warn before leaving page if there are unsaved changes
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedChanges) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => window.removeEventListener("beforeunload", handleBeforeUnload);
+  }, [hasUnsavedChanges]);
+
+  const backHref =
+    sourceProjectId
+      ? `/projects/${sourceProjectId}`
+      : experienceId
+        ? `/experiences/${experienceId}`
+        : "/";
+
+  const handleBackClick = (e: React.MouseEvent) => {
+    if (hasUnsavedChanges) {
+      e.preventDefault();
+      setShowSaveDialog(true);
+    } else {
+      router.push(backHref);
+    }
+  };
+
+  const handleSaveAndExit = async () => {
+    const payload = apiSavePayloadRef.current;
+    if (payload) {
+      if (apiSaveTimeoutRef.current) {
+        clearTimeout(apiSaveTimeoutRef.current);
+        apiSaveTimeoutRef.current = null;
+      }
+      try {
+        const res = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          setHasUnsavedChanges(false);
+          setShowSaveDialog(false);
+          router.push(backHref);
+        }
+      } catch (err) {
+        console.error("Failed to save before exit:", err);
+      }
+    } else {
+      setShowSaveDialog(false);
+      router.push(backHref);
+    }
+  };
+
+  const handleDontSave = () => {
+    setShowSaveDialog(false);
+    setHasUnsavedChanges(false);
+    router.push(backHref);
+  };
 
   // Load video dimensions when videoUrl changes so 9:16 is detected for crop
   useEffect(() => {
@@ -2287,22 +2409,40 @@ export default function EditorPage() {
 
   return (
     <div className="flex h-screen flex-col bg-background text-foreground">
+      <AlertDialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Save changes?</AlertDialogTitle>
+            <AlertDialogDescription>
+              You have unsaved changes. Do you want to save before leaving?
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel onClick={handleDontSave}>
+              Don&apos;t Save
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                void handleSaveAndExit();
+              }}
+            >
+              Save
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* Header - relative z-10 so back stays clickable */}
       <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
         <div className="flex items-center gap-4">
-          <Link
-            href={
-              sourceProjectId
-                ? `/projects/${sourceProjectId}` // Back to gallery when editing a clip
-                : experienceId
-                  ? `/experiences/${experienceId}` // Back to experience page
-                  : "/" // Fallback to home
-            }
+          <button
+            type="button"
+            onClick={handleBackClick}
             className="cursor-pointer text-muted-foreground hover:text-foreground"
-            prefetch={false}
+            aria-label="Go back"
           >
             <ArrowLeft className="size-5" />
-          </Link>
+          </button>
           <h1 className="text-lg font-semibold">ClipCap Editor</h1>
         </div>
         <div className="flex items-center gap-2">

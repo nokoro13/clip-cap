@@ -113,6 +113,7 @@ export async function POST(request: Request) {
       clips,
       fullTranscript,
       youtubeVideoId,
+      editorState,
     } = body;
 
     if (!id || typeof id !== 'string' || !experienceId || typeof experienceId !== 'string') {
@@ -182,6 +183,7 @@ export async function POST(request: Request) {
       clips: clips ?? null,
       fullTranscript: typeof fullTranscript === 'string' ? fullTranscript : null,
       youtubeVideoId: typeof youtubeVideoId === 'string' ? youtubeVideoId : null,
+      editorState: editorState ?? null,
       updatedAt: new Date(),
     };
 
@@ -222,6 +224,7 @@ export async function POST(request: Request) {
           clips: row.clips,
           fullTranscript: row.fullTranscript,
           youtubeVideoId: row.youtubeVideoId,
+          editorState: row.editorState,
           updatedAt: row.updatedAt,
         })
         .where(

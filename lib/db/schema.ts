@@ -30,6 +30,7 @@ export const projects = pgTable(
     clips: jsonb('clips'),
     fullTranscript: text('full_transcript'),
     youtubeVideoId: text('youtube_video_id'),
+    editorState: jsonb('editor_state'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },
