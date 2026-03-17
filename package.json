@@ -11,6 +11,8 @@
 		"remotion:render": "remotion render HelloWorld out/video.mp4 --config remotion.config.ts"
 	},
 	"dependencies": {
+		"@aws-sdk/client-s3": "^3.1010.0",
+		"@aws-sdk/s3-request-presigner": "^3.1010.0",
 		"@remotion/captions": "4.0.434",
 		"@remotion/cli": "4.0.434",
 		"@remotion/google-fonts": "^4.0.434",

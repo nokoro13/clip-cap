@@ -11,6 +11,7 @@ import {
   notifyProjectIndexUpdate,
 } from '@/lib/project-index';
 import { saveVideoBlob } from '@/lib/video-storage';
+import { uploadVideoToS3 } from '@/lib/upload-video-s3';
 
 const DEFAULT_BASIC_CHECKOUT_URL = 'https://whop.com/checkout/plan_xtThkvdruzGaa';
 const DEFAULT_PREMIUM_CHECKOUT_URL = 'https://whop.com/checkout/plan_OHjnjQ68gcbct';
@@ -88,15 +89,23 @@ export function QuickStartCards({
       progressUpdater.stop();
 
       const blobUrl = URL.createObjectURL(file);
+      let remoteVideoUrl: string | null = null;
+      try {
+        remoteVideoUrl = await uploadVideoToS3({ file });
+      } catch (e) {
+        console.error('Error uploading video to S3 (single video):', e);
+      }
+
       const projectData = {
         captions,
         segmentCaptions,
         duration,
         title: file.name,
+        videoUrl: remoteVideoUrl,
         experienceId,
       };
       localStorage.setItem(`project-${projectId}`, JSON.stringify(projectData));
-      sessionStorage.setItem(`video-${projectId}`, blobUrl);
+      sessionStorage.setItem(`video-${projectId}`, remoteVideoUrl || blobUrl);
       await saveVideoBlob(projectId, file);
 
       updateProjectInIndex(experienceId, projectId, {
@@ -152,10 +161,17 @@ export function QuickStartCards({
       progressUpdater.stop();
 
       const blobUrl = URL.createObjectURL(file);
+      let remoteVideoUrl: string | null = null;
+      try {
+        remoteVideoUrl = await uploadVideoToS3({ file });
+      } catch (e) {
+        console.error('Error uploading video to S3 (bulk video):', e);
+      }
+
       const projectData = {
         id: projectId,
         title: file.name,
-        videoUrl: '',
+        videoUrl: remoteVideoUrl,
         thumbnailUrl: '',
         duration: duration,
         captions,
@@ -171,7 +187,7 @@ export function QuickStartCards({
       };
 
       localStorage.setItem(`project-${projectId}`, JSON.stringify(projectData));
-      sessionStorage.setItem(`video-${projectId}`, blobUrl);
+      sessionStorage.setItem(`video-${projectId}`, remoteVideoUrl || blobUrl);
       await saveVideoBlob(projectId, file);
 
       updateProjectInIndex(experienceId, projectId, {
