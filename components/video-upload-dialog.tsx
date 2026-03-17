@@ -13,15 +13,29 @@ import { Button } from '@/components/ui/button';
 import { SubscribeDialog } from '@/components/subscribe-dialog';
 import { cn } from '@/lib/utils';
 
+export const CLIP_TOPICS = [
+  { id: 'auto', label: 'Auto' },
+  { id: 'educational', label: 'Educational' },
+  { id: 'controversial', label: 'Controversial' },
+  { id: 'funny', label: 'Funny' },
+  { id: 'wealth', label: 'Wealth' },
+  { id: 'inspirational', label: 'Inspirational' },
+  { id: 'story', label: 'Story' },
+] as const;
+
+export type ClipTopicId = (typeof CLIP_TOPICS)[number]['id'];
+
 interface VideoUploadDialogProps {
-  onVideoSelect?: (file: File) => void;
-  onYoutubeUrl?: (url: string) => void;
+  onVideoSelect?: (file: File, topics: ClipTopicId[]) => void;
+  onYoutubeUrl?: (url: string, topics: ClipTopicId[]) => void;
   onGoogleDriveImport?: () => void;
   onSampleVideoSelect?: () => void;
   trigger?: React.ReactNode;
   /** When set, the upload UI is replaced with a subscribe CTA that opens the tier dialog. */
   subscriptionGate?: { basicCheckoutUrl: string; premiumCheckoutUrl: string };
 }
+
+const MAX_TOPICS = 3;
 
 export function VideoUploadDialog({
   onVideoSelect,
@@ -34,8 +48,28 @@ export function VideoUploadDialog({
   const [open, setOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [isDragging, setIsDragging] = useState(false);
+  const [selectedTopics, setSelectedTopics] = useState<ClipTopicId[]>(['auto']);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const showSubscribeInstead = Boolean(subscriptionGate);
+
+  const toggleTopic = useCallback((id: ClipTopicId) => {
+    setSelectedTopics((prev) => {
+      if (id === 'auto') {
+        return ['auto'];
+      }
+      if (prev.includes(id)) {
+        return prev.filter((t) => t !== id);
+      }
+      const withoutAuto = prev.filter((t) => t !== 'auto');
+      if (withoutAuto.length >= MAX_TOPICS) return prev;
+      return [...withoutAuto, id];
+    });
+  }, []);
+
+  const getTopicsForApi = useCallback((): ClipTopicId[] => {
+    if (selectedTopics.includes('auto') || selectedTopics.length === 0) return ['auto'];
+    return selectedTopics;
+  }, [selectedTopics]);
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -59,31 +93,31 @@ export function VideoUploadDialog({
       if (files.length > 0) {
         const file = files[0];
         if (file.type.startsWith('video/')) {
-          onVideoSelect?.(file);
+          onVideoSelect?.(file, getTopicsForApi());
           setOpen(false);
         }
       }
     },
-    [onVideoSelect]
+    [onVideoSelect, getTopicsForApi]
   );
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files && files.length > 0) {
-        onVideoSelect?.(files[0]);
+        onVideoSelect?.(files[0], getTopicsForApi());
         setOpen(false);
       }
     },
-    [onVideoSelect]
+    [onVideoSelect, getTopicsForApi]
   );
 
   const handleYoutubeSubmit = useCallback(() => {
     if (youtubeUrl.trim()) {
-      onYoutubeUrl?.(youtubeUrl.trim());
+      onYoutubeUrl?.(youtubeUrl.trim(), getTopicsForApi());
       setOpen(false);
     }
-  }, [youtubeUrl, onYoutubeUrl]);
+  }, [youtubeUrl, onYoutubeUrl, getTopicsForApi]);
 
   const handleBrowseClick = useCallback(() => {
     fileInputRef.current?.click();
@@ -123,6 +157,37 @@ export function VideoUploadDialog({
             </div>
           ) : (
             <>
+              {/* Topic selection - up to 3, priority order */}
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-muted-foreground">
+                  Clip topics (pick up to 3, 1st = most important)
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {CLIP_TOPICS.map((topic) => {
+                    const isSelected = selectedTopics.includes(topic.id);
+                    const order = selectedTopics.indexOf(topic.id) + 1;
+                    return (
+                      <button
+                        key={topic.id}
+                        type="button"
+                        onClick={() => toggleTopic(topic.id)}
+                        className={cn(
+                          'rounded-full px-3 py-1.5 text-sm font-medium transition-colors',
+                          isSelected
+                            ? 'bg-primary text-primary-foreground'
+                            : 'bg-muted text-muted-foreground hover:bg-muted/80'
+                        )}
+                      >
+                        {topic.label}
+                        {order > 0 && topic.id !== 'auto' && (
+                          <span className="ml-1 opacity-80">#{order}</span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
               {/* Google Drive Button */}
               <Button
                 variant="outline"

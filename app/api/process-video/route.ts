@@ -11,7 +11,8 @@ export const maxDuration = 300;
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { youtubeUrl, videoUrl, projectId } = body;
+    const { youtubeUrl, videoUrl, projectId, topics: topicsFromBody } = body;
+    const topics = Array.isArray(topicsFromBody) ? topicsFromBody : ['auto'];
 
     if (!youtubeUrl && !videoUrl) {
       return NextResponse.json(
@@ -55,6 +56,7 @@ export async function POST(request: NextRequest) {
         const analysis = await analyzeViralFromInput({
           file: audioFile,
           videoDuration: video.duration?.toString(),
+          topics,
         });
 
         return NextResponse.json({

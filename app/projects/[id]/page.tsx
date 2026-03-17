@@ -42,6 +42,7 @@ type ViralClip = {
   transcript: string;
   status: ClipStatus;
   thumbnailUrl?: string;
+  topic?: string;
 };
 
 type ProjectData = {
@@ -588,7 +589,7 @@ export default function ProjectGalleryPage() {
 				<div className="flex flex-col h-full justify-between gap-2">
               {/* Clip info */}
               <CardHeader className="p-4 pb-2">
-                <div className="mb-2 flex items-center justify-between">
+                <div className="mb-2 flex flex-wrap items-center justify-between gap-1">
                   <span
                     className={cn(
                       'flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium',
@@ -598,6 +599,11 @@ export default function ProjectGalleryPage() {
                     <TrendingUp className="size-3" />
                     {clip.viralityScore}%
                   </span>
+                  {clip.topic && (
+                    <span className="rounded-full bg-muted px-2 py-0.5 text-xs font-medium capitalize text-muted-foreground">
+                      {clip.topic}
+                    </span>
+                  )}
                 </div>
                 <CardTitle className="line-clamp-2 text-sm font-medium">
                   {clip.title}

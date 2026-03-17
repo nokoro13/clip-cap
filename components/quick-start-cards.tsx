@@ -3,7 +3,7 @@
 import { useRouter, useParams } from 'next/navigation';
 import { Captions, Layers } from 'lucide-react';
 import { SimpleUploadDialog } from '@/components/simple-upload-dialog';
-import { VideoUploadDialog } from '@/components/video-upload-dialog';
+import { VideoUploadDialog, type ClipTopicId } from '@/components/video-upload-dialog';
 import { cn } from '@/lib/utils';
 import {
   addProjectToIndex,
@@ -119,7 +119,7 @@ export function QuickStartCards({
     }
   };
 
-  const handleBulkVideoSelect = async (file: File) => {
+  const handleBulkVideoSelect = async (file: File, topics: ClipTopicId[] = ['auto']) => {
     const projectId = `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     addProjectToIndex(experienceId, {
@@ -136,6 +136,7 @@ export function QuickStartCards({
     try {
       const formData = new FormData();
       formData.append('file', file);
+      formData.append('topics', JSON.stringify(topics));
 
       const response = await fetch('/api/analyze-viral', {
         method: 'POST',
@@ -191,7 +192,7 @@ export function QuickStartCards({
     }
   };
 
-  const handleYoutubeUrl = async (url: string) => {
+  const handleYoutubeUrl = async (url: string, topics: ClipTopicId[] = ['auto']) => {
     const projectId = `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     addProjectToIndex(experienceId, {
@@ -212,6 +213,7 @@ export function QuickStartCards({
         body: JSON.stringify({
           youtubeUrl: url,
           projectId,
+          topics,
         }),
       });
 
@@ -267,8 +269,8 @@ export function QuickStartCards({
   };
 
   const handleSampleVideoSelect = () => {
-    // Use a sample YouTube URL for demonstration
-    handleYoutubeUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ');
+    // Use a sample YouTube URL for demonstration (uses current topic selection from dialog)
+    handleYoutubeUrl('https://www.youtube.com/watch?v=dQw4w9WgXcQ', ['auto']);
   };
 
   const subscriptionGate = !hasAccess

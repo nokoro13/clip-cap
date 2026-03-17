@@ -11,6 +11,16 @@ export async function POST(request: NextRequest) {
     const file = formData.get('file') as File | null;
     const audioUrl = formData.get('audioUrl') as string | null;
     const videoDuration = formData.get('duration') as string | null;
+    const topicsRaw = formData.get('topics') as string | null;
+    let topics: string[] = ['auto'];
+    if (topicsRaw) {
+      try {
+        const parsed = JSON.parse(topicsRaw);
+        topics = Array.isArray(parsed) ? parsed : ['auto'];
+      } catch {
+        topics = ['auto'];
+      }
+    }
 
     if (!file && !audioUrl) {
       return NextResponse.json(
@@ -33,6 +43,7 @@ export async function POST(request: NextRequest) {
           file: fileForAnalysis,
           audioUrl,
           videoDuration,
+          topics,
         });
 
       return NextResponse.json({
