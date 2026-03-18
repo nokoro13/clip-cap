@@ -146,11 +146,6 @@ export async function POST(request: Request) {
       );
     }
 
-    const resolvedS3Key =
-      typeof s3Key === 'string' && s3Key.startsWith('uploads/')
-        ? s3Key
-        : extractS3KeyFromUrl(videoUrl);
-
     const existing = await db
       .select()
       .from(projects)
@@ -162,6 +157,15 @@ export async function POST(request: Request) {
         )
       )
       .limit(1);
+
+    let resolvedS3Key =
+      typeof s3Key === 'string' && s3Key.startsWith('uploads/')
+        ? s3Key
+        : extractS3KeyFromUrl(videoUrl);
+    // Preserve existing s3Key when client sends blob URL (e.g. projects page uses IndexedDB blob for playback)
+    if (!resolvedS3Key && existing.length > 0 && existing[0].s3Key) {
+      resolvedS3Key = existing[0].s3Key;
+    }
 
     const normalizedDuration =
       typeof duration === 'number' && Number.isFinite(duration)
