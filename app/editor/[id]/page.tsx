@@ -1209,6 +1209,7 @@ export default function EditorPage() {
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
+  const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
   const router = useRouter();
   const [collapsedTextTrackIds, setCollapsedTextTrackIds] = useState<Set<string>>(new Set());
   const [collapsedBannerTrackIds, setCollapsedBannerTrackIds] = useState<Set<string>>(new Set());
@@ -2215,6 +2216,7 @@ export default function EditorPage() {
 
     setIsExporting(true);
     setExportProgress(0);
+    setExportDownloadUrl(null);
 
     try {
       // Lambda cannot fetch blob URLs - upload to S3 first if needed
@@ -2317,7 +2319,17 @@ export default function EditorPage() {
         if (progress.done) {
           done = true;
           if (progress.outputFile) {
-            window.open(progress.outputFile, "_blank");
+            // Same-origin proxy: no redirect, works in WebViews and mobile apps
+            const downloadUrl = `/api/download/export?renderId=${encodeURIComponent(renderId)}&bucket=${encodeURIComponent(bucketName)}`;
+            setExportDownloadUrl(downloadUrl);
+            // Trigger download (works on desktop; mobile users can tap the Download button)
+            const a = document.createElement("a");
+            a.href = downloadUrl;
+            a.download = "clip.mp4";
+            a.style.display = "none";
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
           }
           alert("Video exported! Download started.");
         }
@@ -2629,16 +2641,34 @@ export default function EditorPage() {
         </div>
         <div className="flex items-center gap-2">
           <ModeToggle />
-          <Button
-            variant="destructive"
-            onClick={handleExport}
-            disabled={isExporting || !videoUrl}
-          >
-            <Download className="mr-2 size-4" />
-            {isExporting
-              ? `Exporting... ${exportProgress !== null ? `${exportProgress}%` : ""}`
-              : "Export"}
-          </Button>
+          {exportDownloadUrl ? (
+            <div className="flex items-center gap-2">
+              <Button variant="destructive" asChild>
+                <a href={exportDownloadUrl} download="clip.mp4">
+                  <Download className="mr-2 size-4" />
+                  Download
+                </a>
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setExportDownloadUrl(null)}
+              >
+                Export again
+              </Button>
+            </div>
+          ) : (
+            <Button
+              variant="destructive"
+              onClick={handleExport}
+              disabled={isExporting || !videoUrl}
+            >
+              <Download className="mr-2 size-4" />
+              {isExporting
+                ? `Exporting... ${exportProgress !== null ? `${exportProgress}%` : ""}`
+                : "Export"}
+            </Button>
+          )}
         </div>
       </header>
 
