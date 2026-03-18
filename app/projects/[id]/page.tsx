@@ -245,7 +245,8 @@ export default function ProjectGalleryPage() {
       }
 
       // Resolve video URL: prefer IndexedDB first (fresh blob URL after refresh). sessionStorage
-      // can keep a stale blob URL after refresh that no longer plays.
+      // can keep a stale blob URL after refresh that no longer plays. Blob URLs are reliable for
+      // playback; orphan prevention for clip exports is handled in the editor's handleExport.
       let resolvedVideoUrl: string | null = null;
       const fromIdb = await getVideoBlobUrl(projectId);
       if (fromIdb) {

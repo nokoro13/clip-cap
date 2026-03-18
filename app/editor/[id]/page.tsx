@@ -1401,8 +1401,8 @@ export default function EditorPage() {
         console.error("Failed to fetch project from API:", e);
       }
 
-      // Resolve video URL: prefer IndexedDB (fresh blob URL that survives refresh). Blob URLs in
-      // sessionStorage/localStorage are invalid after refresh. For clips, video is stored under sourceProjectId.
+      // Resolve video URL: prefer S3 URLs over blob to avoid duplicate uploads on export.
+      // When project/clip has video on S3 (from initial upload), use it. Only fall back to blob when no S3 URL.
       let initialVideoUrl: string | null = null;
       let parsedProject: { sourceProjectId?: string; youtubeVideoId?: string } | null = null;
       if (storedProject) {
@@ -1413,33 +1413,8 @@ export default function EditorPage() {
         }
       }
 
-      if (projectId) {
-        const fromIdb = await getVideoBlobUrl(projectId);
-        if (fromIdb) {
-          initialVideoUrl = fromIdb;
-          if (typeof sessionStorage !== "undefined") {
-            sessionStorage.setItem(`video-${projectId}`, fromIdb);
-          }
-        }
-      }
-      // For clips, video blob is stored under source project id, not clip id
-      if (!initialVideoUrl && parsedProject?.sourceProjectId) {
-        const fromSourceIdb = await getVideoBlobUrl(parsedProject.sourceProjectId);
-        if (fromSourceIdb) {
-          initialVideoUrl = fromSourceIdb;
-          if (typeof sessionStorage !== "undefined") {
-            sessionStorage.setItem(`video-${projectId}`, fromSourceIdb);
-          }
-        }
-      }
-      if (!initialVideoUrl && typeof sessionStorage !== "undefined") {
-        const fromSession = sessionStorage.getItem(`video-${projectId}`);
-        // Skip blob URLs - they're invalid after refresh
-        if (fromSession && !fromSession.startsWith("blob:")) {
-          initialVideoUrl = fromSession;
-        }
-      }
-      if (!initialVideoUrl && storedProject) {
+      // 1. Prefer S3 URL from stored project (API resolves parent videoUrl for clips)
+      if (storedProject) {
         try {
           const p = JSON.parse(storedProject);
           const storedUrl = p.videoUrl || p.blobUrl || null;
@@ -1448,6 +1423,33 @@ export default function EditorPage() {
           }
         } catch {
           // ignore
+        }
+      }
+      // 2. sessionStorage (non-blob URLs, e.g. from previous session)
+      if (!initialVideoUrl && typeof sessionStorage !== "undefined") {
+        const fromSession = sessionStorage.getItem(`video-${projectId}`);
+        if (fromSession && !fromSession.startsWith("blob:")) {
+          initialVideoUrl = fromSession;
+        }
+      }
+      // 3. IndexedDB blob - only when no S3 URL (avoids duplicate S3 upload on export)
+      if (!initialVideoUrl && projectId) {
+        const fromIdb = await getVideoBlobUrl(projectId);
+        if (fromIdb) {
+          initialVideoUrl = fromIdb;
+          if (typeof sessionStorage !== "undefined") {
+            sessionStorage.setItem(`video-${projectId}`, fromIdb);
+          }
+        }
+      }
+      // 4. For clips, video blob is stored under source project id
+      if (!initialVideoUrl && parsedProject?.sourceProjectId) {
+        const fromSourceIdb = await getVideoBlobUrl(parsedProject.sourceProjectId);
+        if (fromSourceIdb) {
+          initialVideoUrl = fromSourceIdb;
+          if (typeof sessionStorage !== "undefined") {
+            sessionStorage.setItem(`video-${projectId}`, fromSourceIdb);
+          }
         }
       }
       // For YouTube-sourced clips, use our stream proxy (raw yt-dlp URLs are blocked in browser by CORS).
@@ -2221,17 +2223,40 @@ export default function EditorPage() {
 
       if (videoUrl.startsWith("blob:")) {
         setExportProgress(0);
-        const blobRes = await fetch(videoUrl);
-        const blob = await blobRes.blob();
-        effectiveVideoUrl = await uploadBlobToS3(blob);
-        // Replace blob URLs in segments with the new S3 URL
-        effectiveVideoSegments = videoSegments.map((seg) => ({
-          ...seg,
-          sourceVideoUrl:
-            seg.sourceVideoUrl === videoUrl || seg.sourceVideoUrl?.startsWith("blob:")
-              ? effectiveVideoUrl
-              : seg.sourceVideoUrl,
-        }));
+        // For clips, prefer parent project's S3 URL to avoid duplicate uploads and orphaned objects
+        if (sourceProjectId) {
+          try {
+            const parentRes = await fetch(`/api/projects/${sourceProjectId}`);
+            if (parentRes.ok) {
+              const parent = (await parentRes.json()) as { videoUrl?: string };
+              if (parent.videoUrl && !parent.videoUrl.startsWith("blob:")) {
+                effectiveVideoUrl = parent.videoUrl;
+                effectiveVideoSegments = videoSegments.map((seg) => ({
+                  ...seg,
+                  sourceVideoUrl:
+                    seg.sourceVideoUrl === videoUrl || seg.sourceVideoUrl?.startsWith("blob:")
+                      ? parent.videoUrl!
+                      : seg.sourceVideoUrl,
+                }));
+              }
+            }
+          } catch (e) {
+            console.warn("Could not fetch parent project for S3 URL, will upload blob:", e);
+          }
+        }
+        // Fallback: upload blob to S3 if we still have blob (no parent or parent has no S3)
+        if (effectiveVideoUrl.startsWith("blob:")) {
+          const blobRes = await fetch(videoUrl);
+          const blob = await blobRes.blob();
+          effectiveVideoUrl = await uploadBlobToS3(blob);
+          effectiveVideoSegments = videoSegments.map((seg) => ({
+            ...seg,
+            sourceVideoUrl:
+              seg.sourceVideoUrl === videoUrl || seg.sourceVideoUrl?.startsWith("blob:")
+                ? effectiveVideoUrl
+                : seg.sourceVideoUrl,
+          }));
+        }
       }
 
       const renderRes = await fetch("/api/render", {
@@ -2310,6 +2335,7 @@ export default function EditorPage() {
     }
   }, [
     videoUrl,
+    sourceProjectId,
     subtitles,
     style,
     videoSegments,
