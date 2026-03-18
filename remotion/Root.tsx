@@ -45,6 +45,37 @@ export const RemotionRoot: React.FC = () => {
           style: DEFAULT_SUBTITLE_STYLE,
         }}
       />
+
+      {/* Editor export composition - used by Lambda for video export */}
+      <Composition
+        id="EditorVideo"
+        component={SubtitleComposition}
+        durationInFrames={300}
+        fps={30}
+        width={1080}
+        height={1920}
+        defaultProps={{
+          videoUrl: null,
+          subtitles: [],
+          style: DEFAULT_SUBTITLE_STYLE,
+          videoSegments: [],
+          videoTransform: { scale: 1, offsetX: 0, offsetY: 0 },
+          customTextSegments: [],
+          customTextTracks: [],
+          bannerSegments: [],
+          bannerTracks: [],
+        }}
+        calculateMetadata={({ props }) => {
+          const duration =
+            props.videoSegments && props.videoSegments.length > 0
+              ? Math.max(...props.videoSegments.map((s) => s.endFrame))
+              : 300;
+          return {
+            durationInFrames: duration,
+            fps: 30,
+          };
+        }}
+      />
     </>
   );
 };

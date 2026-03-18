@@ -18,6 +18,42 @@ export type UploadToS3Options = {
 };
 
 /**
+ * Upload a Blob to S3 via presigned URL. Returns the permanent read URL.
+ * Use when you have a Blob (e.g. from blob URL) that Lambda cannot fetch.
+ */
+export async function uploadBlobToS3(blob: Blob): Promise<string> {
+  const contentType = blob.type || 'video/mp4';
+  const size = blob.size;
+
+  const res = await fetch('/api/upload', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ contentType, size }),
+  });
+
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}));
+    throw new Error(data.error || `Upload failed: ${res.status}`);
+  }
+
+  const { presignedUrl, readUrl } = (await res.json()) as {
+    presignedUrl: string;
+    readUrl: string;
+  };
+
+  const putRes = await fetch(presignedUrl, {
+    method: 'PUT',
+    body: blob,
+    headers: { 'Content-Type': contentType },
+  });
+  if (!putRes.ok) {
+    throw new Error(`S3 upload failed: ${putRes.status}`);
+  }
+
+  return readUrl;
+}
+
+/**
  * Upload a video file via presigned URL. Returns the permanent read URL.
  * Use this URL in inputProps.videoUrl for Remotion Player and renderMedia().
  */

@@ -34,6 +34,7 @@ import {
 import { ColorPickerInput } from "@/components/color-picker-input";
 import { cn } from "@/lib/utils";
 import { getVideoBlobUrl } from "@/lib/video-storage";
+import { uploadBlobToS3 } from "@/lib/upload-video-s3";
 import {
   FONTS_LIST,
   getFontDisplayName,
@@ -741,11 +742,11 @@ const PRESET_STYLES: {
 
 /** Default platform logos from Simple Icons CDN (SVG, free to use) */
 const PLATFORM_LOGO_URLS = {
-  instagram: "https://cdn.simpleicons.org/instagram/E1306C",
-  youtube: "https://cdn.simpleicons.org/youtube/FF0033",
-  twitch: "https://cdn.simpleicons.org/twitch/9146ff",
-  kick: "https://cdn.simpleicons.org/kick/53FC18",
-  tiktok: "https://cdn.simpleicons.org/tiktok/000000",
+  instagram: "https://clipcap-user-uploads.s3.us-east-2.amazonaws.com/uploads/logos/instagramLogo.svg",
+  youtube: "https://clipcap-user-uploads.s3.us-east-2.amazonaws.com/uploads/logos/youtubeLogo.svg",
+  twitch: "https://clipcap-user-uploads.s3.us-east-2.amazonaws.com/uploads/logos/twitchLogo.svg",
+  kick: "https://clipcap-user-uploads.s3.us-east-2.amazonaws.com/uploads/logos/kickLogo.svg",
+  tiktok: "https://clipcap-user-uploads.s3.us-east-2.amazonaws.com/uploads/logos/tiktokLogo.svg",
 } as const;
 
 const BANNER_PRESETS: {
@@ -1206,6 +1207,8 @@ export default function EditorPage() {
   const apiSavePayloadRef = useRef<object | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportProgress, setExportProgress] = useState<number | null>(null);
   const router = useRouter();
   const [collapsedTextTrackIds, setCollapsedTextTrackIds] = useState<Set<string>>(new Set());
   const [collapsedBannerTrackIds, setCollapsedBannerTrackIds] = useState<Set<string>>(new Set());
@@ -2202,10 +2205,124 @@ export default function EditorPage() {
     return `${mins}:${secs.toString().padStart(2, "0")}.${ms}`;
   };
 
-  const handleExport = useCallback(() => {
-    // For now, just show an alert. In production, this would trigger Lambda rendering
-    alert("Export functionality requires Remotion Lambda setup. Coming soon!");
-  }, []);
+  const handleExport = useCallback(async () => {
+    if (!videoUrl) {
+      alert("No video loaded");
+      return;
+    }
+
+    setIsExporting(true);
+    setExportProgress(0);
+
+    try {
+      // Lambda cannot fetch blob URLs - upload to S3 first if needed
+      let effectiveVideoUrl = videoUrl;
+      let effectiveVideoSegments = videoSegments;
+
+      if (videoUrl.startsWith("blob:")) {
+        setExportProgress(0);
+        const blobRes = await fetch(videoUrl);
+        const blob = await blobRes.blob();
+        effectiveVideoUrl = await uploadBlobToS3(blob);
+        // Replace blob URLs in segments with the new S3 URL
+        effectiveVideoSegments = videoSegments.map((seg) => ({
+          ...seg,
+          sourceVideoUrl:
+            seg.sourceVideoUrl === videoUrl || seg.sourceVideoUrl?.startsWith("blob:")
+              ? effectiveVideoUrl
+              : seg.sourceVideoUrl,
+        }));
+      }
+
+      const renderRes = await fetch("/api/render", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          videoUrl: effectiveVideoUrl,
+          subtitles,
+          style,
+          videoSegments: effectiveVideoSegments,
+          videoTransform,
+          customTextSegments,
+          customTextTracks,
+          bannerSegments,
+          bannerTracks,
+          subtitleMode,
+          highlightColor,
+          videoAspectRatio,
+          durationInFrames: compositionDuration,
+        }),
+      });
+
+      if (!renderRes.ok) {
+        const err = await renderRes.json().catch(() => ({}));
+        throw new Error((err as { error?: string }).error || "Failed to start render");
+      }
+
+      const { renderId, bucketName } = (await renderRes.json()) as {
+        renderId: string;
+        bucketName: string;
+      };
+
+      let done = false;
+      while (!done) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+
+        const progressRes = await fetch(`/api/render/${renderId}`, {
+          headers: { "x-bucket-name": bucketName },
+        });
+
+        if (!progressRes.ok) {
+          const err = await progressRes.json().catch(() => ({}));
+          throw new Error((err as { error?: string }).error || "Failed to get progress");
+        }
+
+        const progress = (await progressRes.json()) as {
+          done?: boolean;
+          overallProgress?: number;
+          outputFile?: string;
+          fatalErrorEncountered?: boolean;
+          errors?: unknown[];
+        };
+
+        if (progress.overallProgress !== undefined) {
+          setExportProgress(Math.round(progress.overallProgress * 100));
+        }
+
+        if (progress.done) {
+          done = true;
+          if (progress.outputFile) {
+            window.open(progress.outputFile, "_blank");
+          }
+          alert("Video exported! Download started.");
+        }
+
+        if (progress.fatalErrorEncountered) {
+          throw new Error("Render failed: " + JSON.stringify(progress.errors));
+        }
+      }
+    } catch (error) {
+      console.error("Export error:", error);
+      alert(error instanceof Error ? error.message : "Export failed");
+    } finally {
+      setIsExporting(false);
+      setExportProgress(null);
+    }
+  }, [
+    videoUrl,
+    subtitles,
+    style,
+    videoSegments,
+    videoTransform,
+    customTextSegments,
+    customTextTracks,
+    bannerSegments,
+    bannerTracks,
+    subtitleMode,
+    highlightColor,
+    videoAspectRatio,
+    compositionDuration,
+  ]);
 
   const handleSeek = useCallback(
     (frame: number) => {
@@ -2486,9 +2603,15 @@ export default function EditorPage() {
         </div>
         <div className="flex items-center gap-2">
           <ModeToggle />
-          <Button variant="destructive" onClick={handleExport}>
+          <Button
+            variant="destructive"
+            onClick={handleExport}
+            disabled={isExporting || !videoUrl}
+          >
             <Download className="mr-2 size-4" />
-            Export
+            {isExporting
+              ? `Exporting... ${exportProgress !== null ? `${exportProgress}%` : ""}`
+              : "Export"}
           </Button>
         </div>
       </header>

@@ -9,6 +9,8 @@
 		"lint": "biome lint",
 		"remotion:studio": "remotion studio --config remotion.config.ts",
 		"remotion:render": "remotion render HelloWorld out/video.mp4 --config remotion.config.ts",
+		"remotion:lambda:deploy": "dotenv -e .env.local -- remotion lambda functions deploy --region us-east-2",
+		"remotion:lambda:site": "dotenv -e .env.local -- remotion lambda sites create remotion/index.ts --site-name=clipcap-editor --region us-east-2",
 		"db:push": "drizzle-kit push",
 		"db:generate": "drizzle-kit generate"
 	},
@@ -20,6 +22,7 @@
 		"@remotion/captions": "4.0.434",
 		"@remotion/cli": "4.0.434",
 		"@remotion/google-fonts": "^4.0.434",
+		"@remotion/lambda": "4.0.434",
 		"@remotion/openai-whisper": "4.0.434",
 		"@remotion/player": "4.0.434",
 		"@remotion/transitions": "4.0.434",
