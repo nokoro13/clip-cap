@@ -37,7 +37,7 @@ async function deleteS3Object(key: string): Promise<void> {
 
 /** GET /api/projects/:id - Get single project */
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const userId = await getUserId();
@@ -67,6 +67,45 @@ export async function GET(
     }
 
     const p = rows[0];
+    let videoUrl = p.videoUrl;
+    if (videoUrl?.startsWith('blob:')) {
+      if (p.youtubeVideoId) {
+        const origin = new URL(request.url).origin;
+        videoUrl = `${origin}/api/youtube-stream/${p.youtubeVideoId}`;
+      } else if (p.s3Key) {
+        const bucket = process.env.AWS_S3_UPLOAD_BUCKET;
+        const region = process.env.AWS_REGION;
+        if (bucket && region) {
+          videoUrl = `https://${bucket}.s3.${region}.amazonaws.com/${p.s3Key}`;
+        }
+      } else if (p.parentProjectId) {
+        const parentRows = await db
+          .select({ videoUrl: projects.videoUrl, s3Key: projects.s3Key, youtubeVideoId: projects.youtubeVideoId })
+          .from(projects)
+          .where(
+            and(
+              eq(projects.id, p.parentProjectId),
+              eq(projects.userId, userId)
+            )
+          )
+          .limit(1);
+        if (parentRows.length > 0) {
+          const parent = parentRows[0];
+          if (parent.videoUrl && !parent.videoUrl.startsWith('blob:')) {
+            videoUrl = parent.videoUrl;
+          } else if (parent.youtubeVideoId) {
+            const origin = new URL(request.url).origin;
+            videoUrl = `${origin}/api/youtube-stream/${parent.youtubeVideoId}`;
+          } else if (parent.s3Key) {
+            const bucket = process.env.AWS_S3_UPLOAD_BUCKET;
+            const region = process.env.AWS_REGION;
+            if (bucket && region) {
+              videoUrl = `https://${bucket}.s3.${region}.amazonaws.com/${parent.s3Key}`;
+            }
+          }
+        }
+      }
+    }
     return NextResponse.json({
       id: p.id,
       title: p.title,
@@ -75,7 +114,7 @@ export async function GET(
       progress: p.progress,
       duration: p.duration,
       clipsCount: p.clipsCount,
-      videoUrl: p.videoUrl,
+      videoUrl,
       captions: p.captions,
       segmentCaptions: p.segmentCaptions,
       clips: p.clips,

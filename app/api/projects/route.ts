@@ -167,6 +167,20 @@ export async function POST(request: Request) {
       resolvedS3Key = existing[0].s3Key;
     }
 
+    let resolvedVideoUrl: string | null = typeof videoUrl === 'string' ? videoUrl : null;
+    // Don't store blob URLs - they're device-local and useless on other devices
+    if (resolvedVideoUrl?.startsWith('blob:')) {
+      if (existing.length > 0 && existing[0].videoUrl && !existing[0].videoUrl.startsWith('blob:')) {
+        resolvedVideoUrl = existing[0].videoUrl;
+      } else if (resolvedS3Key) {
+        const bucket = process.env.AWS_S3_UPLOAD_BUCKET;
+        const region = process.env.AWS_REGION;
+        if (bucket && region) {
+          resolvedVideoUrl = `https://${bucket}.s3.${region}.amazonaws.com/${resolvedS3Key}`;
+        }
+      }
+    }
+
     const normalizedDuration =
       typeof duration === 'number' && Number.isFinite(duration)
         ? Math.round(duration)
@@ -188,7 +202,7 @@ export async function POST(request: Request) {
       duration: normalizedDuration,
       clipsCount: typeof clipsCount === 'number' ? clipsCount : null,
       s3Key: resolvedS3Key ?? null,
-      videoUrl: typeof videoUrl === 'string' ? videoUrl : null,
+      videoUrl: resolvedVideoUrl,
       captions: captions ?? null,
       segmentCaptions: segmentCaptions ?? null,
       clips: clips ?? null,
