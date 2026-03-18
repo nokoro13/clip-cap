@@ -31,6 +31,8 @@ export const projects = pgTable(
     fullTranscript: text('full_transcript'),
     youtubeVideoId: text('youtube_video_id'),
     editorState: jsonb('editor_state'),
+    /** When set, this project is a clip of the parent; omit from recent projects list */
+    parentProjectId: text('parent_project_id'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },

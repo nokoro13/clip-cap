@@ -1,6 +1,6 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
-import { eq, and, desc, count } from 'drizzle-orm';
+import { eq, and, desc, count, isNull } from 'drizzle-orm';
 import { whopsdk } from '@/lib/whop-sdk';
 import { db } from '@/lib/db';
 import { projects } from '@/lib/db/schema';
@@ -61,7 +61,8 @@ export async function GET(request: Request) {
       .where(
         and(
           eq(projects.userId, userId),
-          eq(projects.experienceId, experienceId)
+          eq(projects.experienceId, experienceId),
+          isNull(projects.parentProjectId)
         )
       )
       .orderBy(desc(projects.createdAt))
@@ -114,6 +115,7 @@ export async function POST(request: Request) {
       fullTranscript,
       youtubeVideoId,
       editorState,
+      parentProjectId,
     } = body;
 
     if (!id || typeof id !== 'string' || !experienceId || typeof experienceId !== 'string') {
@@ -166,6 +168,11 @@ export async function POST(request: Request) {
         ? Math.round(duration)
         : null;
 
+    const resolvedParentProjectId =
+      typeof parentProjectId === 'string' && parentProjectId.length > 0
+        ? parentProjectId
+        : null;
+
     const row = {
       id,
       userId,
@@ -184,6 +191,7 @@ export async function POST(request: Request) {
       fullTranscript: typeof fullTranscript === 'string' ? fullTranscript : null,
       youtubeVideoId: typeof youtubeVideoId === 'string' ? youtubeVideoId : null,
       editorState: editorState ?? null,
+      parentProjectId: resolvedParentProjectId,
       updatedAt: new Date(),
     };
 
@@ -194,7 +202,8 @@ export async function POST(request: Request) {
         .where(
           and(
             eq(projects.userId, userId),
-            eq(projects.experienceId, experienceId)
+            eq(projects.experienceId, experienceId),
+            isNull(projects.parentProjectId)
           )
         );
 
@@ -225,6 +234,7 @@ export async function POST(request: Request) {
           fullTranscript: row.fullTranscript,
           youtubeVideoId: row.youtubeVideoId,
           editorState: row.editorState,
+          parentProjectId: row.parentProjectId,
           updatedAt: row.updatedAt,
         })
         .where(

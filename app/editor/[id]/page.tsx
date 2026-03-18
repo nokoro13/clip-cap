@@ -1721,6 +1721,7 @@ export default function EditorPage() {
           videoUrl: merged.videoUrl,
           captions: merged.captions,
           segmentCaptions: merged.segmentCaptions,
+          ...(sourceProjectId && { parentProjectId: sourceProjectId }),
           editorState: {
             subtitleStyle: style,
             subtitleMode,
@@ -1774,7 +1775,7 @@ export default function EditorPage() {
         }
       }
     };
-  }, [params.id, experienceId, subtitles, segmentSubtitles, videoDuration, videoUrl, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments, style, subtitleMode, highlightColor, maxWordsPerSegment]);
+  }, [params.id, experienceId, sourceProjectId, subtitles, segmentSubtitles, videoDuration, videoUrl, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments, style, subtitleMode, highlightColor, maxWordsPerSegment]);
 
   // Warn before leaving page if there are unsaved changes
   useEffect(() => {
