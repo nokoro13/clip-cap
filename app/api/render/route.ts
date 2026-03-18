@@ -1,13 +1,33 @@
 import { NextResponse } from 'next/server';
+import { headers } from 'next/headers';
+import { eq, and } from 'drizzle-orm';
 import { renderMediaOnLambda } from '@remotion/lambda/client';
+import { whopsdk } from '@/lib/whop-sdk';
+import { db } from '@/lib/db';
+import { projects } from '@/lib/db/schema';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300; // 5 minutes
 
+async function getUserId(): Promise<string | null> {
+  try {
+    const { userId } = await whopsdk.verifyUserToken(await headers());
+    return userId;
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   try {
+    const userId = await getUserId();
+    if (!userId) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
+
     const body = await request.json();
     const {
+      projectId,
       videoUrl,
       subtitles,
       style,
@@ -22,6 +42,13 @@ export async function POST(request: Request) {
       videoAspectRatio,
     } = body;
 
+    if (!projectId || typeof projectId !== 'string') {
+      return NextResponse.json(
+        { error: 'projectId is required' },
+        { status: 400 }
+      );
+    }
+
     const functionName = process.env.REMOTION_LAMBDA_FUNCTION_NAME;
     const serveUrl = process.env.REMOTION_LAMBDA_SERVE_URL;
     const region = process.env.AWS_REGION || 'us-east-2';
@@ -33,6 +60,26 @@ export async function POST(request: Request) {
             'Lambda not configured. Set REMOTION_LAMBDA_FUNCTION_NAME and REMOTION_LAMBDA_SERVE_URL.',
         },
         { status: 500 }
+      );
+    }
+
+    const existingExport = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.userId, userId),
+          eq(projects.exportStatus, 'exporting')
+        )
+      )
+      .limit(1);
+
+    if (existingExport.length > 0 && existingExport[0].id !== projectId) {
+      return NextResponse.json(
+        {
+          error: 'Another export is already in progress. Please wait for it to complete.',
+        },
+        { status: 409 }
       );
     }
 
@@ -62,6 +109,26 @@ export async function POST(request: Request) {
       privacy: 'public',
       overwrite: true,
     });
+
+    if (projectId) {
+      await db
+        .update(projects)
+        .set({
+          exportStatus: 'exporting',
+          exportRenderId: renderId,
+          exportBucketName: bucketName,
+          exportStartedAt: new Date(),
+          exportProgress: 0,
+          exportUrl: null,
+          updatedAt: new Date(),
+        })
+        .where(
+          and(
+            eq(projects.id, projectId),
+            eq(projects.userId, userId)
+          )
+        );
+    }
 
     return NextResponse.json({
       success: true,

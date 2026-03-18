@@ -123,6 +123,11 @@ export async function GET(
       experienceId: p.experienceId,
       editorState: p.editorState,
       createdAt: p.createdAt,
+      exportStatus: p.exportStatus ?? 'idle',
+      exportUrl: p.exportUrl,
+      exportProgress: p.exportProgress ?? 0,
+      exportRenderId: p.exportRenderId,
+      exportBucketName: p.exportBucketName,
     });
   } catch (err) {
     console.error('GET /api/projects/:id error:', err);

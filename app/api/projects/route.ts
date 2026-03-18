@@ -116,6 +116,7 @@ export async function POST(request: Request) {
       youtubeVideoId,
       editorState,
       parentProjectId,
+      exportStatus,
     } = body;
 
     if (!id || typeof id !== 'string' || !experienceId || typeof experienceId !== 'string') {
@@ -235,26 +236,36 @@ export async function POST(request: Request) {
 
       await db.insert(projects).values(row);
     } else {
+      const updatePayload = {
+        title: row.title,
+        type: row.type,
+        status: row.status,
+        progress: row.progress,
+        duration: row.duration,
+        clipsCount: row.clipsCount,
+        s3Key: row.s3Key,
+        videoUrl: row.videoUrl,
+        captions: row.captions,
+        segmentCaptions: row.segmentCaptions,
+        clips: row.clips,
+        fullTranscript: row.fullTranscript,
+        youtubeVideoId: row.youtubeVideoId,
+        editorState: row.editorState,
+        parentProjectId: row.parentProjectId,
+        updatedAt: row.updatedAt,
+        ...(exportStatus === 'idle' && {
+          exportStatus: 'idle' as const,
+          exportUrl: null,
+          exportRenderId: null,
+          exportBucketName: null,
+          exportStartedAt: null,
+          exportProgress: null,
+        }),
+      };
+
       await db
         .update(projects)
-        .set({
-          title: row.title,
-          type: row.type,
-          status: row.status,
-          progress: row.progress,
-          duration: row.duration,
-          clipsCount: row.clipsCount,
-          s3Key: row.s3Key,
-          videoUrl: row.videoUrl,
-          captions: row.captions,
-          segmentCaptions: row.segmentCaptions,
-          clips: row.clips,
-          fullTranscript: row.fullTranscript,
-          youtubeVideoId: row.youtubeVideoId,
-          editorState: row.editorState,
-          parentProjectId: row.parentProjectId,
-          updatedAt: row.updatedAt,
-        })
+        .set(updatePayload)
         .where(
           and(
             eq(projects.id, id),

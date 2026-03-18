@@ -1210,6 +1210,11 @@ export default function EditorPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
+  const [activeExportProjectId, setActiveExportProjectId] = useState<string | null>(null);
+  const [pendingExportResume, setPendingExportResume] = useState<{
+    renderId: string;
+    bucketName: string;
+  } | null>(null);
   const router = useRouter();
   const [collapsedTextTrackIds, setCollapsedTextTrackIds] = useState<Set<string>>(new Set());
   const [collapsedBannerTrackIds, setCollapsedBannerTrackIds] = useState<Set<string>>(new Set());
@@ -1397,9 +1402,37 @@ export default function EditorPage() {
           storedProject = JSON.stringify(projectFromApi);
           // Persist to localStorage so save effect can work on devices that loaded from API
           localStorage.setItem(`project-${projectId}`, storedProject);
+
+          // Load export state from API (persists across sessions/devices)
+          const status = apiProject.exportStatus ?? "idle";
+          const url = apiProject.exportUrl ?? null;
+          const progress = apiProject.exportProgress ?? 0;
+          if (status === "done" && url) {
+            setExportDownloadUrl(url);
+          } else if (status === "exporting" && apiProject.exportRenderId && apiProject.exportBucketName) {
+            setIsExporting(true);
+            setExportProgress(progress);
+            setPendingExportResume({
+              renderId: apiProject.exportRenderId,
+              bucketName: apiProject.exportBucketName,
+            });
+          }
         }
       } catch (e) {
         console.error("Failed to fetch project from API:", e);
+      }
+
+      // Check export lock (one export per user)
+      try {
+        const activeRes = await fetch("/api/export/active");
+        if (activeRes.ok) {
+          const { activeExportProjectId } = (await activeRes.json()) as {
+            activeExportProjectId: string | null;
+          };
+          setActiveExportProjectId(activeExportProjectId ?? null);
+        }
+      } catch {
+        // ignore
       }
 
       // Resolve video URL: prefer S3 URLs over blob to avoid duplicate uploads on export.
@@ -1616,6 +1649,80 @@ export default function EditorPage() {
 
     loadData();
   }, [params.id, searchParams]);
+
+  // Resume export polling when returning to a project that was exporting
+  useEffect(() => {
+    if (!pendingExportResume) return;
+    const { renderId, bucketName } = pendingExportResume;
+    let cancelled = false;
+
+    const poll = async () => {
+      try {
+        let done = false;
+        while (!done && !cancelled) {
+          await new Promise((r) => setTimeout(r, 2000));
+          if (cancelled) return;
+
+          const progressRes = await fetch(`/api/render/${renderId}`, {
+            headers: { "x-bucket-name": bucketName },
+          });
+          if (!progressRes.ok) return;
+          const progress = (await progressRes.json()) as {
+            done?: boolean;
+            overallProgress?: number;
+            outputFile?: string;
+            fatalErrorEncountered?: boolean;
+            errors?: unknown[];
+          };
+          if (progress.overallProgress !== undefined) {
+            setExportProgress(Math.round(progress.overallProgress * 100));
+          }
+          if (progress.done) {
+            done = true;
+            if (progress.outputFile) {
+              const downloadUrl = `/api/download/export?renderId=${encodeURIComponent(renderId)}&bucket=${encodeURIComponent(bucketName)}`;
+              setExportDownloadUrl(downloadUrl);
+            }
+            alert("Video exported! Tap Download button to save.");
+          }
+          if (progress.fatalErrorEncountered) {
+            throw new Error("Render failed: " + JSON.stringify(progress.errors));
+          }
+        }
+      } catch (err) {
+        if (!cancelled) {
+          console.error("Resume export error:", err);
+          alert(err instanceof Error ? err.message : "Export failed");
+        }
+      } finally {
+        if (!cancelled) {
+          setIsExporting(false);
+          setExportProgress(null);
+          setPendingExportResume(null);
+          setActiveExportProjectId(null);
+        }
+      }
+    };
+    poll();
+    return () => {
+      cancelled = true;
+    };
+  }, [pendingExportResume]);
+
+  // Poll export lock when tab becomes visible (user may have started export elsewhere)
+  useEffect(() => {
+    const onFocus = () => {
+      fetch("/api/export/active")
+        .then((r) => r.ok && r.json())
+        .then((data) => {
+          if (data?.activeExportProjectId) setActiveExportProjectId(data.activeExportProjectId);
+          else setActiveExportProjectId(null);
+        })
+        .catch(() => {});
+    };
+    window.addEventListener("focus", onFocus);
+    return () => window.removeEventListener("focus", onFocus);
+  }, []);
 
   // Derived duration: when we have video segments, use their total; otherwise use videoDuration
   const compositionDuration =
@@ -2214,9 +2321,24 @@ export default function EditorPage() {
       return;
     }
 
+    const projectId = params.id as string;
+
+    // One export per user - block if another project is exporting
+    const activeRes = await fetch("/api/export/active");
+    if (activeRes.ok) {
+      const { activeExportProjectId } = (await activeRes.json()) as {
+        activeExportProjectId: string | null;
+      };
+      if (activeExportProjectId && activeExportProjectId !== projectId) {
+        alert("Another export is already in progress. Please wait for it to complete.");
+        return;
+      }
+    }
+
     setIsExporting(true);
     setExportProgress(0);
     setExportDownloadUrl(null);
+    setActiveExportProjectId(projectId);
 
     try {
       // Lambda cannot fetch blob URLs - upload to S3 first if needed
@@ -2265,6 +2387,7 @@ export default function EditorPage() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          projectId,
           videoUrl: effectiveVideoUrl,
           subtitles,
           style,
@@ -2319,19 +2442,10 @@ export default function EditorPage() {
         if (progress.done) {
           done = true;
           if (progress.outputFile) {
-            // Same-origin proxy: no redirect, works in WebViews and mobile apps
             const downloadUrl = `/api/download/export?renderId=${encodeURIComponent(renderId)}&bucket=${encodeURIComponent(bucketName)}`;
             setExportDownloadUrl(downloadUrl);
-            // Trigger download (works on desktop; mobile users can tap the Download button)
-            const a = document.createElement("a");
-            a.href = downloadUrl;
-            a.download = "clip.mp4";
-            a.style.display = "none";
-            document.body.appendChild(a);
-            a.click();
-            document.body.removeChild(a);
           }
-          alert("Video exported! Download started.");
+          alert("Video exported! Tap Download button to save.");
         }
 
         if (progress.fatalErrorEncountered) {
@@ -2344,8 +2458,10 @@ export default function EditorPage() {
     } finally {
       setIsExporting(false);
       setExportProgress(null);
+      setActiveExportProjectId(null);
     }
   }, [
+    params.id,
     videoUrl,
     sourceProjectId,
     subtitles,
@@ -2652,7 +2768,16 @@ export default function EditorPage() {
               <Button
                 variant="outline"
                 size="sm"
-                onClick={() => setExportDownloadUrl(null)}
+                onClick={async () => {
+                  setExportDownloadUrl(null);
+                  try {
+                    await fetch(`/api/projects/${params.id}/export-reset`, {
+                      method: "POST",
+                    });
+                  } catch {
+                    // ignore
+                  }
+                }}
               >
                 Export again
               </Button>
@@ -2661,7 +2786,11 @@ export default function EditorPage() {
             <Button
               variant="destructive"
               onClick={handleExport}
-              disabled={isExporting || !videoUrl}
+              disabled={
+                isExporting ||
+                !videoUrl ||
+                (!!activeExportProjectId && activeExportProjectId !== params.id)
+              }
             >
               <Download className="mr-2 size-4" />
               {isExporting

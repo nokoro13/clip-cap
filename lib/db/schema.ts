@@ -33,6 +33,18 @@ export const projects = pgTable(
     editorState: jsonb('editor_state'),
     /** When set, this project is a clip of the parent; omit from recent projects list */
     parentProjectId: text('parent_project_id'),
+    /** Export state: idle | exporting | done | error */
+    exportStatus: text('export_status').$type<'idle' | 'exporting' | 'done' | 'error'>(),
+    /** Download URL when export is done (e.g. /api/download/export?renderId=...&bucket=...) */
+    exportUrl: text('export_url'),
+    /** Remotion render ID (for polling progress) */
+    exportRenderId: text('export_render_id'),
+    /** Remotion S3 bucket name */
+    exportBucketName: text('export_bucket_name'),
+    /** When export was started */
+    exportStartedAt: timestamp('export_started_at', { withTimezone: true }),
+    /** Progress 0-100 when exporting */
+    exportProgress: integer('export_progress'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
   },
