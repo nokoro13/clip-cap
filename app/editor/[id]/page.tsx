@@ -1731,9 +1731,22 @@ export default function EditorPage() {
       // ignore
     }
     return () => {
+      // On unmount, flush any pending debounced save so that
+      // recent edits are not lost if the user navigates away quickly
+      // (common on mobile).
       if (apiSaveTimeoutRef.current) {
         clearTimeout(apiSaveTimeoutRef.current);
         apiSaveTimeoutRef.current = null;
+        const pending = apiSavePayloadRef.current;
+        if (pending) {
+          void fetch("/api/projects", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(pending),
+          }).catch((e) =>
+            console.error("Failed to flush project to API on unmount:", e)
+          );
+        }
       }
     };
   }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments, style, subtitleMode, highlightColor, maxWordsPerSegment]);
