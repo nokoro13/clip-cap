@@ -1391,6 +1391,8 @@ export default function EditorPage() {
             }
           }
           storedProject = JSON.stringify(projectFromApi);
+          // Persist to localStorage so save effect can work on devices that loaded from API
+          localStorage.setItem(`project-${projectId}`, storedProject);
         }
       } catch (e) {
         console.error("Failed to fetch project from API:", e);
@@ -1667,10 +1669,33 @@ export default function EditorPage() {
     const projectId = params.id as string;
     if (!projectId || typeof localStorage === "undefined") return;
     const stored = localStorage.getItem(`project-${projectId}`);
-    if (!stored) return;
+    let project: Record<string, unknown>;
     try {
-      const project = JSON.parse(stored);
-      const merged = {
+      if (stored) {
+        project = JSON.parse(stored) as Record<string, unknown>;
+      } else {
+        // Fallback when localStorage is empty (e.g. opened on new device before load wrote to storage)
+        const captions = subtitles.map((s) => ({
+          text: s.text,
+          startMs: (s.startFrame / FPS) * 1000,
+          endMs: (s.endFrame / FPS) * 1000,
+        }));
+        const segmentCaptions = segmentSubtitles.map((s) => ({
+          text: s.text,
+          startMs: (s.startFrame / FPS) * 1000,
+          endMs: (s.endFrame / FPS) * 1000,
+          words: s.words,
+        }));
+        project = {
+          experienceId: experienceId ?? undefined,
+          title: "Untitled",
+          captions,
+          segmentCaptions,
+          duration: videoDuration / FPS,
+          videoUrl: videoUrl ?? undefined,
+        };
+      }
+      const merged: Record<string, unknown> = {
         ...project,
         videoTransform,
         videoAspectRatio,
@@ -1688,7 +1713,7 @@ export default function EditorPage() {
         const payload = {
           id: projectId,
           experienceId: merged.experienceId,
-          title: merged.title ?? "Untitled",
+          title: (merged.title as string) ?? "Untitled",
           type: "editor",
           status: "completed",
           progress: 100,
@@ -1749,7 +1774,7 @@ export default function EditorPage() {
         }
       }
     };
-  }, [params.id, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments, style, subtitleMode, highlightColor, maxWordsPerSegment]);
+  }, [params.id, experienceId, subtitles, segmentSubtitles, videoDuration, videoUrl, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments, style, subtitleMode, highlightColor, maxWordsPerSegment]);
 
   // Warn before leaving page if there are unsaved changes
   useEffect(() => {
