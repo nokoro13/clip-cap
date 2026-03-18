@@ -127,6 +127,29 @@ export async function DELETE(
 
     const s3Key = rows[0].s3Key;
 
+    // Fetch clip IDs before deleting (for frontend cleanup)
+    const clipRows = await db
+      .select({ id: projects.id })
+      .from(projects)
+      .where(
+        and(
+          eq(projects.parentProjectId, id),
+          eq(projects.userId, userId)
+        )
+      );
+    const deletedClipIds = clipRows.map((r) => r.id);
+
+    // Delete associated clips first (projects with this as parentProjectId)
+    await db
+      .delete(projects)
+      .where(
+        and(
+          eq(projects.parentProjectId, id),
+          eq(projects.userId, userId)
+        )
+      );
+
+    // Delete the project itself
     await db
       .delete(projects)
       .where(
@@ -144,7 +167,7 @@ export async function DELETE(
       }
     }
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({ success: true, deletedClipIds });
   } catch (err) {
     console.error('DELETE /api/projects/:id error:', err);
     return NextResponse.json(

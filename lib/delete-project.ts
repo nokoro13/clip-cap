@@ -50,12 +50,18 @@ export async function deleteProject(experienceId: string, projectId: string): Pr
       const data = await res.json().catch(() => ({}));
       throw new Error((data as { error?: string }).error || 'Failed to delete project');
     }
+    const data = (await res.json().catch(() => ({}))) as { deletedClipIds?: string[] };
+    localStorage.removeItem(`project-${projectId}`);
+    sessionStorage.removeItem(`video-${projectId}`);
+    await deleteVideoBlob(projectId);
+    for (const clipId of data.deletedClipIds ?? []) {
+      localStorage.removeItem(`project-${clipId}`);
+      sessionStorage.removeItem(`video-${clipId}`);
+      await deleteVideoBlob(clipId);
+    }
   } catch (err) {
     throw err;
   }
 
-  localStorage.removeItem(`project-${projectId}`);
-  sessionStorage.removeItem(`video-${projectId}`);
-  await deleteVideoBlob(projectId);
   notifyProjectIndexUpdate();
 }

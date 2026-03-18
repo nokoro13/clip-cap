@@ -72,9 +72,15 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
         const data = await res.json().catch(() => ({}));
         throw new Error(data.error || 'Failed to delete project');
       }
+      const data = (await res.json().catch(() => ({}))) as { deletedClipIds?: string[] };
       localStorage.removeItem(`project-${projectId}`);
       sessionStorage.removeItem(`video-${projectId}`);
       await deleteVideoBlob(projectId);
+      for (const clipId of data.deletedClipIds ?? []) {
+        localStorage.removeItem(`project-${clipId}`);
+        sessionStorage.removeItem(`video-${clipId}`);
+        await deleteVideoBlob(clipId);
+      }
       await refresh();
     } catch (error) {
       console.error('Failed to delete project:', error);
