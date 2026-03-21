@@ -153,6 +153,8 @@ export function QuickStartCards({
   const handleBulkVideoSelect = async (file: File, topics: ClipTopicId[] = ['auto']) => {
     const projectId = `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
+    console.log('[bulk] Started:', file.name, file.size, 'bytes');
+
     await saveProjectToApi(experienceId, {
       id: projectId,
       experienceId,
@@ -170,8 +172,32 @@ export function QuickStartCards({
     );
 
     try {
+      // 1. Upload to S3 FIRST (required). Server will fetch from S3 for analysis.
+      // This avoids uploading the large file twice from mobile (once to API, once to S3).
+      console.log('[bulk] Step 1: Uploading to S3');
+      let remoteVideoUrl: string;
+      try {
+        remoteVideoUrl = await uploadVideoToS3({
+          file,
+          onProgress: (p) => {
+            const pct = Math.round(p.progress * 100);
+            if (pct % 25 === 0 || pct === 100) {
+              console.log('[bulk] S3 upload:', pct, '%');
+            }
+          },
+        });
+      } catch (uploadError) {
+        console.error('[bulk] S3 upload failed:', uploadError);
+        throw new Error(
+          `Upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`
+        );
+      }
+      console.log('[bulk] S3 upload complete:', remoteVideoUrl);
+
+      // 2. Send S3 URL to analyze-viral (server fetches from S3 - no second client upload)
+      console.log('[bulk] Step 2: Analyzing video');
       const formData = new FormData();
-      formData.append('file', file);
+      formData.append('videoUrl', remoteVideoUrl);
       formData.append('topics', JSON.stringify(topics));
 
       const response = await fetch('/api/analyze-viral', {
@@ -187,13 +213,9 @@ export function QuickStartCards({
       const { captions, segmentCaptions, clips, duration, fullTranscript } = await response.json();
       progressUpdater.stop();
 
+      console.log('[bulk] Analysis complete:', clips?.length ?? 0, 'clips');
+
       const blobUrl = URL.createObjectURL(file);
-      let remoteVideoUrl: string | null = null;
-      try {
-        remoteVideoUrl = await uploadVideoToS3({ file });
-      } catch (e) {
-        console.error('Error uploading video to S3 (bulk video):', e);
-      }
 
       const projectData = {
         id: projectId,
@@ -213,6 +235,7 @@ export function QuickStartCards({
         experienceId,
       };
 
+      console.log('[bulk] Step 3: Saving to storage and API');
       localStorage.setItem(`project-${projectId}`, JSON.stringify(projectData));
       sessionStorage.setItem(`video-${projectId}`, remoteVideoUrl || blobUrl);
       await saveVideoBlob(projectId, file);
@@ -226,13 +249,14 @@ export function QuickStartCards({
         progress: 100,
         duration: typeof duration === 'number' ? duration : 0,
         clipsCount: clips?.length ?? 0,
-        videoUrl: remoteVideoUrl ?? undefined,
+        videoUrl: remoteVideoUrl,
         captions,
         segmentCaptions,
         clips: projectData.clips,
         fullTranscript,
       });
 
+      console.log('[bulk] Complete, navigating to project');
       router.push(`/projects/${projectId}`);
     } catch (error) {
       progressUpdater.stop();

@@ -64,6 +64,10 @@ export async function uploadVideoToS3({
   const contentType = file.type || 'video/mp4';
   const size = file.size;
 
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('[upload-s3] Requesting presign:', size, 'bytes');
+  }
+
   const res = await fetch('/api/upload', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -80,6 +84,10 @@ export async function uploadVideoToS3({
     readUrl: string;
   };
 
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('[upload-s3] Uploading to S3...');
+  }
+
   if (onProgress) {
     await uploadWithProgress({
       file,
@@ -95,6 +103,10 @@ export async function uploadVideoToS3({
     if (!putRes.ok) {
       throw new Error(`S3 upload failed: ${putRes.status}`);
     }
+  }
+
+  if (typeof console !== 'undefined' && console.log) {
+    console.log('[upload-s3] S3 upload complete');
   }
 
   return readUrl;

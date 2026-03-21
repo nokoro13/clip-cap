@@ -34,6 +34,7 @@ export async function POST(request: Request) {
     const { bucket, region } = getConfig();
 
     const json = await request.json();
+    console.log('[upload] Presign request:', json.size, 'bytes', json.contentType);
     const size = typeof json.size === 'number' ? json.size : Number(json.size);
     const contentType =
       typeof json.contentType === 'string'
@@ -87,6 +88,7 @@ export async function POST(request: Request) {
 
     // Public read URL after upload (bucket must allow public read or use CloudFront)
     const readUrl = `https://${bucket}.s3.${region}.amazonaws.com/${key}`;
+    console.log('[upload] Presigned URL generated for', key);
 
     return NextResponse.json({ presignedUrl, readUrl });
   } catch (err) {
