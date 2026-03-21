@@ -196,6 +196,34 @@ export default function ProjectGalleryPage() {
   const [processingClips, setProcessingClips] = useState<Set<string>>(new Set());
   const [experienceId, setExperienceId] = useState<string | null>(null);
   const [playingClipId, setPlayingClipId] = useState<string | null>(null);
+  const [isPolling, setIsPolling] = useState(false);
+
+  const projectId = params.id as string;
+
+  const applyProjectFromApi = (
+    apiProject: Record<string, unknown>,
+    resolvedVideoUrl: string | null
+  ): ProjectData => {
+    const clips = (apiProject.clips ?? []) as ViralClip[];
+    const clipsWithStatus = clips.map((c) => ({ ...c, status: (c.status || 'all') as ClipStatus }));
+    return {
+      id: apiProject.id as string,
+      title: apiProject.title as string,
+      videoUrl: resolvedVideoUrl || (apiProject.videoUrl as string) || '',
+      duration: (apiProject.duration as number) ?? 0,
+      captions: (apiProject.captions as Caption[]) ?? [],
+      segmentCaptions: (apiProject.segmentCaptions as Caption[] | undefined) ?? undefined,
+      clips: clipsWithStatus,
+      fullTranscript: (apiProject.fullTranscript as string) ?? '',
+      status: (apiProject.status as 'processing' | 'completed' | 'error') ?? 'completed',
+      createdAt: apiProject.createdAt
+        ? new Date(apiProject.createdAt as string).getTime()
+        : Date.now(),
+      youtubeVideoId: apiProject.youtubeVideoId as string | undefined,
+      experienceId: apiProject.experienceId as string | undefined,
+      thumbnailUrl: '',
+    };
+  };
 
   // Load project data
   useEffect(() => {
@@ -203,50 +231,79 @@ export default function ProjectGalleryPage() {
       setIsLoading(true);
       setError(null);
 
-      const projectId = params.id as string;
       let storedProject = localStorage.getItem(`project-${projectId}`);
 
       try {
         const apiRes = await fetch(`/api/projects/${projectId}`);
         if (apiRes.ok) {
           const apiProject = await apiRes.json();
-          const projectFromApi: Record<string, unknown> = {
-            id: apiProject.id,
-            title: apiProject.title,
-            videoUrl: apiProject.videoUrl,
-            duration: apiProject.duration ?? 0,
-            captions: apiProject.captions ?? [],
-            clips: (apiProject.clips ?? []).map((c: ViralClip) => ({ ...c, status: c.status || 'all' })),
-            fullTranscript: apiProject.fullTranscript ?? '',
-            status: 'completed',
-            createdAt: apiProject.createdAt ? new Date(apiProject.createdAt).getTime() : Date.now(),
-            youtubeVideoId: apiProject.youtubeVideoId,
-            experienceId: apiProject.experienceId,
-            thumbnailUrl: '',
-          };
+
+          // Resolve video URL: API videoUrl (S3) > sessionStorage > IndexedDB > localStorage
+          let resolvedVideoUrl: string | null = apiProject.videoUrl || null;
+          if (!resolvedVideoUrl || resolvedVideoUrl.startsWith('blob:')) {
+            const fromIdb = await getVideoBlobUrl(projectId);
+            if (fromIdb) {
+              resolvedVideoUrl = fromIdb;
+              sessionStorage.setItem(`video-${projectId}`, fromIdb);
+            }
+          }
+          if (!resolvedVideoUrl) resolvedVideoUrl = sessionStorage.getItem(`video-${projectId}`);
+          if (!resolvedVideoUrl && storedProject) {
+            try {
+              const p = JSON.parse(storedProject);
+              resolvedVideoUrl = p.videoUrl || p.blobUrl || null;
+            } catch {
+              // ignore
+            }
+          }
+          if (apiProject.youtubeVideoId) {
+            const origin = typeof window !== 'undefined' ? window.location.origin : '';
+            resolvedVideoUrl = `${origin}/api/youtube-stream/${apiProject.youtubeVideoId}`;
+            sessionStorage.setItem(`video-${projectId}`, resolvedVideoUrl);
+          }
+
+          if (resolvedVideoUrl) setVideoUrl(resolvedVideoUrl);
+
+          const projectData = applyProjectFromApi(apiProject, resolvedVideoUrl);
+          setProject(projectData);
+          if (projectData.experienceId) setExperienceId(projectData.experienceId);
+
+          // Merge clip status from localStorage if we have it
           const local = localStorage.getItem(`project-${projectId}`);
-          if (local) {
+          if (local && projectData.status === 'completed') {
             try {
               const parsed = JSON.parse(local) as Record<string, unknown>;
               if (parsed.clips && Array.isArray(parsed.clips)) {
-                projectFromApi.clips = (parsed.clips as ViralClip[]).map((c) => ({
-                  ...c,
-                  status: (c.status || 'all') as ClipStatus,
-                }));
+                const localClips = parsed.clips as ViralClip[];
+                projectData.clips = projectData.clips.map((c) => {
+                  const localClip = localClips.find((lc) => lc.id === c.id);
+                  return localClip ? { ...c, status: localClip.status || c.status } : c;
+                });
+                setProject({ ...projectData, clips: projectData.clips });
               }
             } catch {
               // ignore
             }
           }
-          storedProject = JSON.stringify(projectFromApi);
+
+          storedProject = JSON.stringify(projectData);
+          localStorage.setItem(`project-${projectId}`, storedProject);
+
+          if (projectData.status === 'processing') {
+            setIsPolling(true);
+          }
+          if (projectData.status === 'error') {
+            setError('Video analysis failed. Please try again.');
+          }
+
+          setIsLoading(false);
+          return;
         }
       } catch (e) {
         console.error('Failed to fetch project from API:', e);
       }
 
-      // Resolve video URL: prefer IndexedDB first (fresh blob URL after refresh). sessionStorage
-      // can keep a stale blob URL after refresh that no longer plays. Blob URLs are reliable for
-      // playback; orphan prevention for clip exports is handled in the editor's handleExport.
+      // Fallback: resolve video URL from local storage
       let resolvedVideoUrl: string | null = null;
       const fromIdb = await getVideoBlobUrl(projectId);
       if (fromIdb) {
@@ -262,15 +319,11 @@ export default function ProjectGalleryPage() {
           // ignore
         }
       }
-
-      // If we have a stored project with youtubeVideoId, use our stream proxy (raw yt-dlp URLs are blocked in browser by CORS).
-      // Use absolute URL so video elements and Remotion can load reliably.
       if (storedProject) {
         try {
           const parsed = JSON.parse(storedProject);
           if (parsed.youtubeVideoId) {
-            const origin =
-              typeof window !== 'undefined' ? window.location.origin : '';
+            const origin = typeof window !== 'undefined' ? window.location.origin : '';
             resolvedVideoUrl = `${origin}/api/youtube-stream/${parsed.youtubeVideoId}`;
             sessionStorage.setItem(`video-${projectId}`, resolvedVideoUrl);
           }
@@ -278,22 +331,22 @@ export default function ProjectGalleryPage() {
           // ignore
         }
       }
-
       if (resolvedVideoUrl) setVideoUrl(resolvedVideoUrl);
 
       if (storedProject) {
         try {
           const parsed = JSON.parse(storedProject);
-          // Ensure clips have status
           const clips = (parsed.clips || []).map((clip: ViralClip) => ({
             ...clip,
             status: clip.status || 'all',
           }));
-          
           const finalVideoUrl = resolvedVideoUrl || '';
           setProject({ ...parsed, clips, videoUrl: finalVideoUrl });
           if (finalVideoUrl) setVideoUrl(finalVideoUrl);
           if (parsed.experienceId) setExperienceId(parsed.experienceId);
+          if (parsed.status === 'processing') {
+            setIsPolling(true);
+          }
           setIsLoading(false);
           return;
         } catch (e) {
@@ -372,9 +425,46 @@ export default function ProjectGalleryPage() {
     loadProject();
   }, [params.id, searchParams]);
 
-  // Save project when clips change (localStorage + API)
+  // Poll for completion when project is processing
   useEffect(() => {
-    if (!project) return;
+    if (!isPolling || !projectId) return;
+
+    const poll = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}`);
+        if (!res.ok) return;
+        const apiProject = await res.json();
+        const status = apiProject.status as string;
+
+        if (status === 'completed') {
+          setIsPolling(false);
+          let resolvedVideoUrl: string | null = apiProject.videoUrl || null;
+          if (apiProject.youtubeVideoId) {
+            const origin = typeof window !== 'undefined' ? window.location.origin : '';
+            resolvedVideoUrl = `${origin}/api/youtube-stream/${apiProject.youtubeVideoId}`;
+          }
+          if (!resolvedVideoUrl) resolvedVideoUrl = sessionStorage.getItem(`video-${projectId}`);
+          const projectData = applyProjectFromApi(apiProject, resolvedVideoUrl);
+          setProject(projectData);
+          if (resolvedVideoUrl) setVideoUrl(resolvedVideoUrl);
+          localStorage.setItem(`project-${projectId}`, JSON.stringify(projectData));
+        } else if (status === 'error') {
+          setIsPolling(false);
+          setError('Video analysis failed. Please try again.');
+        }
+      } catch (e) {
+        console.error('Poll error:', e);
+      }
+    };
+
+    const intervalId = setInterval(poll, 3000);
+    poll(); // Run immediately
+    return () => clearInterval(intervalId);
+  }, [isPolling, projectId]);
+
+  // Save project when clips change (localStorage + API) - only when completed
+  useEffect(() => {
+    if (!project || project.status !== 'completed') return;
     localStorage.setItem(`project-${project.id}`, JSON.stringify(project));
     const expId = project.experienceId ?? experienceId;
     if (expId) {
@@ -482,9 +572,22 @@ export default function ProjectGalleryPage() {
     return (
       <div className="flex min-h-screen flex-col items-center justify-center bg-background text-foreground">
         <Loader2 className="mb-4 size-8 animate-spin text-primary" />
-        <h2 className="mb-2 text-xl font-semibold">Processing Video</h2>
-        <p className="text-muted-foreground">
-          Analyzing your video for viral moments...
+        <h2 className="mb-2 text-xl font-semibold">Loading...</h2>
+        <p className="text-muted-foreground">Fetching your project</p>
+      </div>
+    );
+  }
+
+  if (project?.status === 'processing') {
+    return (
+      <div className="flex min-h-screen flex-col items-center justify-center bg-background text-foreground">
+        <Loader2 className="mb-4 size-8 animate-spin text-primary" />
+        <h2 className="mb-2 text-xl font-semibold">Analyzing Video</h2>
+        <p className="mb-4 text-muted-foreground">
+          Finding viral moments... This may take 1–2 minutes for longer videos.
+        </p>
+        <p className="text-sm text-muted-foreground">
+          You can leave this page and come back—we&apos;ll keep processing.
         </p>
       </div>
     );

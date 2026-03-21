@@ -172,8 +172,7 @@ export function QuickStartCards({
     );
 
     try {
-      // 1. Upload to S3 FIRST (required). Server will fetch from S3 for analysis.
-      // This avoids uploading the large file twice from mobile (once to API, once to S3).
+      // 1. Upload to S3 (required). Server will fetch from S3 for analysis.
       console.log('[bulk] Step 1: Uploading to S3');
       let remoteVideoUrl: string;
       try {
@@ -187,6 +186,7 @@ export function QuickStartCards({
           },
         });
       } catch (uploadError) {
+        progressUpdater.stop();
         console.error('[bulk] S3 upload failed:', uploadError);
         throw new Error(
           `Upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`
@@ -194,69 +194,44 @@ export function QuickStartCards({
       }
       console.log('[bulk] S3 upload complete:', remoteVideoUrl);
 
-      // 2. Send S3 URL to analyze-viral (server fetches from S3 - no second client upload)
-      console.log('[bulk] Step 2: Analyzing video');
-      const formData = new FormData();
-      formData.append('videoUrl', remoteVideoUrl);
-      formData.append('topics', JSON.stringify(topics));
-
-      const response = await fetch('/api/analyze-viral', {
+      // 2. Start async analysis (returns immediately). Project page will poll for completion.
+      console.log('[bulk] Step 2: Starting async analysis');
+      const asyncRes = await fetch('/api/analyze-viral-async', {
         method: 'POST',
-        body: formData,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          videoUrl: remoteVideoUrl,
+          projectId,
+          experienceId,
+          title: file.name,
+          topics,
+        }),
       });
 
-      if (!response.ok) {
-        const error = await response.json();
-        throw new Error(error.error || 'Failed to analyze video');
-      }
-
-      const { captions, segmentCaptions, clips, duration, fullTranscript } = await response.json();
       progressUpdater.stop();
 
-      console.log('[bulk] Analysis complete:', clips?.length ?? 0, 'clips');
+      if (!asyncRes.ok) {
+        const errData = await asyncRes.json().catch(() => ({ error: 'Unknown error' }));
+        throw new Error(errData.error || 'Failed to start analysis');
+      }
 
-      const blobUrl = URL.createObjectURL(file);
-
-      const projectData = {
-        id: projectId,
-        title: file.name,
-        videoUrl: remoteVideoUrl,
-        thumbnailUrl: '',
-        duration: duration,
-        captions,
-        segmentCaptions,
-        clips: clips.map((clip: { id: string; title: string; startMs: number; endMs: number; viralityScore: number; reason?: string; transcript: string }) => ({
-          ...clip,
-          status: 'all',
-        })),
-        fullTranscript,
-        status: 'completed',
-        createdAt: Date.now(),
-        experienceId,
-      };
-
-      console.log('[bulk] Step 3: Saving to storage and API');
-      localStorage.setItem(`project-${projectId}`, JSON.stringify(projectData));
-      sessionStorage.setItem(`video-${projectId}`, remoteVideoUrl || blobUrl);
+      // Store video URL for project page (video loads when processing completes)
+      sessionStorage.setItem(`video-${projectId}`, remoteVideoUrl);
       await saveVideoBlob(projectId, file);
 
-      await saveProjectToApi(experienceId, {
-        id: projectId,
-        experienceId,
-        title: file.name,
-        type: 'project',
-        status: 'completed',
-        progress: 100,
-        duration: typeof duration === 'number' ? duration : 0,
-        clipsCount: clips?.length ?? 0,
-        videoUrl: remoteVideoUrl,
-        captions,
-        segmentCaptions,
-        clips: projectData.clips,
-        fullTranscript,
-      });
+      // Minimal project data for processing state
+      localStorage.setItem(
+        `project-${projectId}`,
+        JSON.stringify({
+          id: projectId,
+          title: file.name,
+          videoUrl: remoteVideoUrl,
+          status: 'processing',
+          experienceId,
+        })
+      );
 
-      console.log('[bulk] Complete, navigating to project');
+      console.log('[bulk] Navigating to project (analysis running in background)');
       router.push(`/projects/${projectId}`);
     } catch (error) {
       progressUpdater.stop();
