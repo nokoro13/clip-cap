@@ -164,29 +164,30 @@ export function QuickStartCards({
       progress: 0,
     });
 
-    const progressUpdater = createProgressUpdater(
-      experienceId,
-      projectId,
-      file.name,
-      'project'
-    );
-
     try {
       // 1. Upload to S3 (required). Server will fetch from S3 for analysis.
       console.log('[bulk] Step 1: Uploading to S3');
       let remoteVideoUrl: string;
+      let lastSavedUploadProgress = -1;
       try {
         remoteVideoUrl = await uploadVideoToS3({
           file,
           onProgress: (p) => {
-            const pct = Math.round(p.progress * 100);
-            if (pct % 25 === 0 || pct === 100) {
-              console.log('[bulk] S3 upload:', pct, '%');
+            const pct = Math.round(p.progress * 22);
+            if (pct - lastSavedUploadProgress >= 4 || p.progress >= 1) {
+              lastSavedUploadProgress = pct;
+              void saveProjectToApi(experienceId, {
+                id: projectId,
+                experienceId,
+                title: file.name,
+                type: 'project',
+                status: 'processing',
+                progress: Math.min(22, pct),
+              });
             }
           },
         });
       } catch (uploadError) {
-        progressUpdater.stop();
         console.error('[bulk] S3 upload failed:', uploadError);
         throw new Error(
           `Upload failed: ${uploadError instanceof Error ? uploadError.message : 'Unknown error'}`
@@ -194,7 +195,16 @@ export function QuickStartCards({
       }
       console.log('[bulk] S3 upload complete:', remoteVideoUrl);
 
-      // 2. Start async analysis (returns immediately). Project page will poll for completion.
+      await saveProjectToApi(experienceId, {
+        id: projectId,
+        experienceId,
+        title: file.name,
+        type: 'project',
+        status: 'processing',
+        progress: 22,
+      });
+
+      // 2. Start async analysis (returns immediately). Gallery on this page polls for progress.
       console.log('[bulk] Step 2: Starting async analysis');
       const asyncRes = await fetch('/api/analyze-viral-async', {
         method: 'POST',
@@ -208,18 +218,14 @@ export function QuickStartCards({
         }),
       });
 
-      progressUpdater.stop();
-
       if (!asyncRes.ok) {
         const errData = await asyncRes.json().catch(() => ({ error: 'Unknown error' }));
         throw new Error(errData.error || 'Failed to start analysis');
       }
 
-      // Store video URL for project page (video loads when processing completes)
       sessionStorage.setItem(`video-${projectId}`, remoteVideoUrl);
       await saveVideoBlob(projectId, file);
 
-      // Minimal project data for processing state
       localStorage.setItem(
         `project-${projectId}`,
         JSON.stringify({
@@ -231,10 +237,8 @@ export function QuickStartCards({
         })
       );
 
-      console.log('[bulk] Navigating to project (analysis running in background)');
-      router.push(`/projects/${projectId}`);
+      notifyProjectIndexUpdate();
     } catch (error) {
-      progressUpdater.stop();
       console.error('Error analyzing video:', error);
       await saveProjectToApi(experienceId, {
         id: projectId,

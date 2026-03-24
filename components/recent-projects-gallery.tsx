@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { Captions, Layers, ExternalLink, Loader2, AlertCircle, Trash2 } from 'lucide-react';
 import { type ProjectIndexEntry, PROJECT_INDEX_UPDATE_EVENT } from '@/lib/project-index';
@@ -108,6 +108,34 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
     };
   }, [mounted, experienceId, refresh]);
 
+  const hasProcessing = useMemo(
+    () => entries.some((e) => e.status === 'processing'),
+    [entries]
+  );
+
+  /** Poll list only while a project is processing — avoids idle traffic. Pauses when tab is hidden. */
+  useEffect(() => {
+    if (!mounted || !hasProcessing) return;
+
+    const tick = () => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') {
+        return;
+      }
+      void refresh();
+    };
+
+    const id = window.setInterval(tick, 2600);
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') void refresh();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => {
+      window.clearInterval(id);
+      document.removeEventListener('visibilitychange', onVisible);
+    };
+  }, [mounted, hasProcessing, refresh]);
+
   if (!mounted) {
     return (
       <div className={cn('space-y-4', className)}>
@@ -173,7 +201,9 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
                   </p>
                   <div className="mt-1 flex items-center gap-2 text-xs text-muted-foreground">
                     {isProcessing ? (
-                      <span>Processing...</span>
+                      <span>
+                        {entry.type === 'project' ? 'Analyzing video…' : 'Processing…'}
+                      </span>
                     ) : isError ? (
                       <span className="text-destructive">Failed</span>
                     ) : (

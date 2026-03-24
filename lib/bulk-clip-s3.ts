@@ -98,16 +98,21 @@ export async function putClipMp4ToUploadsBucket(
  * For each viral clip, extract the time range from the full video and upload a standalone MP4.
  * Clips that fail extraction are returned unchanged (caller can fall back to parent trim).
  */
+export type BulkClipProgress = (completed: number, total: number) => void | Promise<void>;
+
 export async function extractAndUploadBulkClips<T extends ClipSegmentInput>(
   fullVideoPath: string,
   projectId: string,
   clips: T[],
   bucket: string,
-  region: string
+  region: string,
+  onProgress?: BulkClipProgress
 ): Promise<Array<T & { s3Key?: string; videoUrl?: string }>> {
   const out: Array<T & { s3Key?: string; videoUrl?: string }> = [];
+  const total = clips.length;
 
-  for (const clip of clips) {
+  for (let i = 0; i < clips.length; i++) {
+    const clip = clips[i]!;
     try {
       const buf = await extractClipSegmentToBuffer(
         fullVideoPath,
@@ -131,6 +136,7 @@ export async function extractAndUploadBulkClips<T extends ClipSegmentInput>(
       );
       out.push({ ...clip });
     }
+    await onProgress?.(i + 1, total);
   }
 
   return out;

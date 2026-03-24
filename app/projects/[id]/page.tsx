@@ -686,7 +686,7 @@ export default function ProjectGalleryPage() {
     <div className="min-h-screen bg-background text-foreground">
       {/* Header - relative z-10 so back/edit stay clickable when many videos load */}
       <header className="relative z-10 border-b border-border">
-        <div className="mx-auto flex max-w-7xl items-center justify-between px-6 py-4 gap-2">
+        <div className="mx-auto flex items-center justify-between px-6 py-4 gap-2">
           <div className="flex items-center gap-4 flex-1 overflow-hidden">
             <Link
               href={experienceId ? `/experiences/${experienceId}` : '/'}

@@ -42,6 +42,25 @@ function extractS3KeyFromUrl(videoUrl: string): string | null {
   }
 }
 
+async function setProjectProgress(
+  projectId: string,
+  userId: string,
+  experienceId: string,
+  progress: number
+): Promise<void> {
+  const pct = Math.min(100, Math.max(0, Math.round(progress)));
+  await db
+    .update(projects)
+    .set({ progress: pct, updatedAt: new Date() })
+    .where(
+      and(
+        eq(projects.id, projectId),
+        eq(projects.userId, userId),
+        eq(projects.experienceId, experienceId)
+      )
+    );
+}
+
 /** Run analysis in background and update project when done */
 async function runAnalysisInBackground(
   videoUrl: string,
@@ -57,6 +76,8 @@ async function runAnalysisInBackground(
   let fullVideoPath: string | null = null;
 
   try {
+    // POST handler leaves progress at ~25 (after client upload). Stay monotonic from here.
+    await setProjectProgress(projectId, userId, experienceId, 28);
     const response = await fetch(videoUrl);
     if (!response.ok) {
       throw new Error(`Failed to fetch video from S3: ${response.status}`);
@@ -71,10 +92,12 @@ async function runAnalysisInBackground(
       `clipcap-bulk-full-${projectId}-${Date.now()}.${ext}`
     );
     fs.writeFileSync(fullVideoPath, buffer);
+    await setProjectProgress(projectId, userId, experienceId, 34);
 
     const file = new File([buffer], `video.${ext}`, { type: contentType });
 
     const { file: fileForWhisper, cleanup } = await getFileForWhisper(file);
+    await setProjectProgress(projectId, userId, experienceId, 38);
     try {
       const { captions, segmentCaptions, clips, duration, fullTranscript } =
         await analyzeViralFromInput({
@@ -83,6 +106,8 @@ async function runAnalysisInBackground(
           videoDuration: null,
           topics,
         });
+
+      await setProjectProgress(projectId, userId, experienceId, 58);
 
       let clipsWithStatus = (clips ?? []).map(
         (c: {
@@ -108,9 +133,22 @@ async function runAnalysisInBackground(
           projectId,
           clipsWithStatus,
           bucket,
-          region
+          region,
+          async (done, total) => {
+            const slice = total > 0 ? (done / total) * 34 : 34;
+            await setProjectProgress(
+              projectId,
+              userId,
+              experienceId,
+              58 + slice
+            );
+          }
         );
+      } else {
+        await setProjectProgress(projectId, userId, experienceId, 94);
       }
+
+      await setProjectProgress(projectId, userId, experienceId, 97);
 
       const s3Key = extractS3KeyFromUrl(videoUrl);
       const normalizedDuration =
@@ -248,7 +286,8 @@ export async function POST(request: NextRequest) {
         videoUrl,
         s3Key: s3Key ?? undefined,
         status: 'processing',
-        progress: 0,
+        // Client reports ~0–22 during S3 upload; avoid snapping back to 0 when the job starts.
+        progress: 25,
         title: typeof title === 'string' ? title : existing[0].title,
         updatedAt: new Date(),
       })
