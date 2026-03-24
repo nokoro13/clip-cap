@@ -1,7 +1,13 @@
 "use client";
 
 import { Player, PlayerRef } from "@remotion/player";
-import { useState, useRef, useCallback, useEffect } from "react";
+import {
+  useState,
+  useRef,
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+} from "react";
 import { useSearchParams, useParams, useRouter } from "next/navigation";
 import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen, ChartNoAxesGantt, Play, Pause, GripHorizontal } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
@@ -81,6 +87,50 @@ import {
 } from "@/components/ui/alert-dialog";
 
 const FPS = 30;
+
+/** Stable digest for dirty detection (what we persist to the API). */
+function persistPayloadDigest(payload: {
+  title?: unknown;
+  duration?: unknown;
+  videoUrl?: unknown;
+  parentProjectId?: unknown;
+  captions?: unknown;
+  segmentCaptions?: unknown;
+  editorState?: unknown;
+}): string {
+  return JSON.stringify({
+    t: payload.title,
+    d: payload.duration,
+    v: payload.videoUrl,
+    p: payload.parentProjectId ?? null,
+    c: payload.captions,
+    s: payload.segmentCaptions,
+    e: payload.editorState,
+  });
+}
+
+/** Apply server `editorState` onto a project snapshot and expand flat timeline fields. */
+function mergeEditorStateIntoProjectSnapshot(
+  project: Record<string, unknown>,
+  editorState: unknown
+): void {
+  if (editorState === null || editorState === undefined) return;
+  if (typeof editorState !== "object" || Array.isArray(editorState)) return;
+  const es = editorState as Record<string, unknown>;
+  if (Object.keys(es).length === 0) return;
+  project.editorState = es;
+  if (es.videoSegments !== undefined) project.videoSegments = es.videoSegments;
+  if (es.deletedRanges !== undefined) project.deletedRanges = es.deletedRanges;
+  if (es.videoTransform !== undefined) project.videoTransform = es.videoTransform;
+  if (es.videoAspectRatio !== undefined)
+    project.videoAspectRatio = es.videoAspectRatio;
+  if (es.customTextTracks !== undefined)
+    project.customTextTracks = es.customTextTracks;
+  if (es.customTextSegments !== undefined)
+    project.customTextSegments = es.customTextSegments;
+  if (es.bannerTracks !== undefined) project.bannerTracks = es.bannerTracks;
+  if (es.bannerSegments !== undefined) project.bannerSegments = es.bannerSegments;
+}
 
 const DEFAULT_CUSTOM_TEXT_STYLE: CustomTextStyle = {
   fontFamily: "Inter",
@@ -1203,8 +1253,9 @@ export default function EditorPage() {
   const mobilePanelTabPrevRef = useRef<
     "" | "styling" | "subtitles" | "text" | "banners" | "timeline"
   >("styling");
-  const apiSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const apiSavePayloadRef = useRef<object | null>(null);
+  const apiSavePayloadRef = useRef<Record<string, unknown> | null>(null);
+  /** Last saved / hydrated digest; null until first persist effect after load establishes baseline. */
+  const savedPayloadDigestBaselineRef = useRef<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
@@ -1376,28 +1427,44 @@ export default function EditorPage() {
             title: apiProject.title ?? "Untitled",
             editorState: apiProject.editorState,
           };
-          // Expand editorState to top level so video-segments effect and other code can read them
-          if (apiProject.editorState && typeof apiProject.editorState === "object") {
-            const es = apiProject.editorState as Record<string, unknown>;
-            if (es.videoSegments !== undefined) projectFromApi.videoSegments = es.videoSegments;
-            if (es.deletedRanges !== undefined) projectFromApi.deletedRanges = es.deletedRanges;
-            if (es.videoTransform !== undefined) projectFromApi.videoTransform = es.videoTransform;
-            if (es.videoAspectRatio !== undefined) projectFromApi.videoAspectRatio = es.videoAspectRatio;
-            if (es.customTextTracks !== undefined) projectFromApi.customTextTracks = es.customTextTracks;
-            if (es.customTextSegments !== undefined) projectFromApi.customTextSegments = es.customTextSegments;
-            if (es.bannerTracks !== undefined) projectFromApi.bannerTracks = es.bannerTracks;
-            if (es.bannerSegments !== undefined) projectFromApi.bannerSegments = es.bannerSegments;
-          }
+          mergeEditorStateIntoProjectSnapshot(
+            projectFromApi,
+            apiProject.editorState
+          );
           const local = localStorage.getItem(`project-${projectId}`);
           if (local) {
             try {
               const parsed = JSON.parse(local) as Record<string, unknown>;
-              ["videoTransform", "videoAspectRatio", "videoSegments", "deletedRanges", "customTextTracks", "customTextSegments", "bannerTracks", "bannerSegments", "clipStartMs", "clipEndMs", "sourceProjectId"].forEach((k) => {
+              [
+                "videoTransform",
+                "videoAspectRatio",
+                "videoSegments",
+                "deletedRanges",
+                "customTextTracks",
+                "customTextSegments",
+                "bannerTracks",
+                "bannerSegments",
+                "clipStartMs",
+                "clipEndMs",
+                "sourceProjectId",
+              ].forEach((k) => {
                 if (parsed[k] !== undefined) projectFromApi[k] = parsed[k];
               });
             } catch {
               // ignore
             }
+          }
+          // DB editor_state must win over gallery-seeded localStorage (per-clip customization)
+          mergeEditorStateIntoProjectSnapshot(
+            projectFromApi,
+            apiProject.editorState
+          );
+          if (
+            !projectFromApi.sourceProjectId &&
+            typeof apiProject.parentProjectId === "string" &&
+            apiProject.parentProjectId.length > 0
+          ) {
+            projectFromApi.sourceProjectId = apiProject.parentProjectId;
           }
           storedProject = JSON.stringify(projectFromApi);
           // Persist to localStorage so save effect can work on devices that loaded from API
@@ -1777,17 +1844,22 @@ export default function EditorPage() {
     }
   }, [videoUrl, videoDuration, videoStartFrom, params.id]);
 
-  // Persist videoTransform, videoAspectRatio, videoSegments, deletedRanges to project in localStorage and API
+  // When switching clips, block persistence until load finishes — avoids wrong localStorage/baseline from stale state.
+  useLayoutEffect(() => {
+    setIsLoading(true);
+    savedPayloadDigestBaselineRef.current = null;
+  }, [params.id]);
+
+  // Persist to localStorage; API save only via explicit "Save" in the leave dialog (strict per-clip).
   useEffect(() => {
     const projectId = params.id as string;
-    if (!projectId || typeof localStorage === "undefined") return;
+    if (!projectId || typeof localStorage === "undefined" || isLoading) return;
     const stored = localStorage.getItem(`project-${projectId}`);
     let project: Record<string, unknown>;
     try {
       if (stored) {
         project = JSON.parse(stored) as Record<string, unknown>;
       } else {
-        // Fallback when localStorage is empty (e.g. opened on new device before load wrote to storage)
         const captions = subtitles.map((s) => ({
           text: s.text,
           startMs: (s.startFrame / FPS) * 1000,
@@ -1808,6 +1880,20 @@ export default function EditorPage() {
           videoUrl: videoUrl ?? undefined,
         };
       }
+      const editorStatePayload = {
+        subtitleStyle: style,
+        subtitleMode,
+        highlightColor,
+        maxWordsPerSegment,
+        videoTransform,
+        videoAspectRatio,
+        videoSegments,
+        deletedRanges,
+        customTextTracks,
+        customTextSegments,
+        bannerTracks,
+        bannerSegments,
+      };
       const merged: Record<string, unknown> = {
         ...project,
         videoTransform,
@@ -1818,12 +1904,16 @@ export default function EditorPage() {
         customTextSegments,
         bannerTracks,
         bannerSegments,
+        editorState: editorStatePayload,
       };
       localStorage.setItem(`project-${projectId}`, JSON.stringify(merged));
 
-      if (merged.experienceId && merged.captions) {
-        if (apiSaveTimeoutRef.current) clearTimeout(apiSaveTimeoutRef.current);
-        const payload = {
+      if (
+        merged.experienceId &&
+        Array.isArray(merged.captions) &&
+        merged.captions.length > 0
+      ) {
+        const payload: Record<string, unknown> = {
           id: projectId,
           experienceId: merged.experienceId,
           title: (merged.title as string) ?? "Untitled",
@@ -1834,61 +1924,51 @@ export default function EditorPage() {
           videoUrl: merged.videoUrl,
           captions: merged.captions,
           segmentCaptions: merged.segmentCaptions,
-          ...(sourceProjectId && { parentProjectId: sourceProjectId }),
-          editorState: {
-            subtitleStyle: style,
-            subtitleMode,
-            highlightColor,
-            maxWordsPerSegment,
-            videoTransform,
-            videoAspectRatio,
-            videoSegments,
-            deletedRanges,
-            customTextTracks,
-            customTextSegments,
-            bannerTracks,
-            bannerSegments,
-          },
+          ...(sourceProjectId ? { parentProjectId: sourceProjectId } : {}),
+          editorState: editorStatePayload,
         };
         apiSavePayloadRef.current = payload;
-        setHasUnsavedChanges(true);
-        apiSaveTimeoutRef.current = setTimeout(
-          () =>
-            fetch("/api/projects", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(payload),
-            })
-              .then((res) => {
-                if (res.ok) setHasUnsavedChanges(false);
-              })
-              .catch((e) => console.error("Failed to persist project to API:", e)),
-          2000
-        );
+        const digest = persistPayloadDigest({
+          title: payload.title,
+          duration: payload.duration,
+          videoUrl: payload.videoUrl,
+          parentProjectId: payload.parentProjectId,
+          captions: payload.captions,
+          segmentCaptions: payload.segmentCaptions,
+          editorState: payload.editorState,
+        });
+        if (savedPayloadDigestBaselineRef.current === null) {
+          savedPayloadDigestBaselineRef.current = digest;
+          setHasUnsavedChanges(false);
+        } else {
+          setHasUnsavedChanges(digest !== savedPayloadDigestBaselineRef.current);
+        }
       }
     } catch {
       // ignore
     }
-    return () => {
-      // On unmount, flush any pending debounced save so that
-      // recent edits are not lost if the user navigates away quickly
-      // (common on mobile).
-      if (apiSaveTimeoutRef.current) {
-        clearTimeout(apiSaveTimeoutRef.current);
-        apiSaveTimeoutRef.current = null;
-        const pending = apiSavePayloadRef.current;
-        if (pending) {
-          void fetch("/api/projects", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(pending),
-          }).catch((e) =>
-            console.error("Failed to flush project to API on unmount:", e)
-          );
-        }
-      }
-    };
-  }, [params.id, experienceId, sourceProjectId, subtitles, segmentSubtitles, videoDuration, videoUrl, videoTransform, videoAspectRatio, videoSegments, deletedRanges, customTextTracks, customTextSegments, bannerTracks, bannerSegments, style, subtitleMode, highlightColor, maxWordsPerSegment]);
+  }, [
+    params.id,
+    isLoading,
+    experienceId,
+    sourceProjectId,
+    subtitles,
+    segmentSubtitles,
+    videoDuration,
+    videoUrl,
+    videoTransform,
+    videoAspectRatio,
+    videoSegments,
+    deletedRanges,
+    customTextTracks,
+    customTextSegments,
+    bannerTracks,
+    bannerSegments,
+    style,
+    subtitleMode,
+    highlightColor,
+    maxWordsPerSegment,
+  ]);
 
   // Warn before leaving page if there are unsaved changes
   useEffect(() => {
@@ -1921,10 +2001,6 @@ export default function EditorPage() {
   const handleSaveAndExit = async () => {
     const payload = apiSavePayloadRef.current;
     if (payload) {
-      if (apiSaveTimeoutRef.current) {
-        clearTimeout(apiSaveTimeoutRef.current);
-        apiSaveTimeoutRef.current = null;
-      }
       try {
         const res = await fetch("/api/projects", {
           method: "POST",
@@ -1932,12 +2008,28 @@ export default function EditorPage() {
           body: JSON.stringify(payload),
         });
         if (res.ok) {
+          const digest = persistPayloadDigest({
+            title: payload.title,
+            duration: payload.duration,
+            videoUrl: payload.videoUrl,
+            parentProjectId: payload.parentProjectId,
+            captions: payload.captions,
+            segmentCaptions: payload.segmentCaptions,
+            editorState: payload.editorState,
+          });
+          savedPayloadDigestBaselineRef.current = digest;
           setHasUnsavedChanges(false);
           setShowSaveDialog(false);
           router.push(backHref);
+        } else {
+          const detail = await res.text().catch(() => "");
+          alert(
+            `Could not save your changes (${res.status}). ${detail ? `${detail.slice(0, 200)}…` : "Please try again."}`
+          );
         }
       } catch (err) {
         console.error("Failed to save before exit:", err);
+        alert("Could not save your changes. Check your connection and try again.");
       }
     } else {
       setShowSaveDialog(false);
@@ -1948,6 +2040,8 @@ export default function EditorPage() {
   const handleDontSave = () => {
     setShowSaveDialog(false);
     setHasUnsavedChanges(false);
+    apiSavePayloadRef.current = null;
+    savedPayloadDigestBaselineRef.current = null;
     router.push(backHref);
   };
 
@@ -2722,22 +2816,32 @@ export default function EditorPage() {
       <AlertDialog open={showSaveDialog} onOpenChange={setShowSaveDialog}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Save changes?</AlertDialogTitle>
+            <AlertDialogTitle>Save this clip?</AlertDialogTitle>
             <AlertDialogDescription>
-              You have unsaved changes. Do you want to save before leaving?
+              You have unsaved changes to this clip&apos;s editor (styles, timeline, captions). Save
+              them to your project before leaving, or discard them.
             </AlertDialogDescription>
           </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel onClick={handleDontSave}>
-              Don&apos;t Save
-            </AlertDialogCancel>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel type="button">Keep editing</AlertDialogCancel>
+            <Button
+              type="button"
+              variant="outline"
+              className="border-destructive/50 text-destructive hover:bg-destructive/10"
+              onClick={() => {
+                void handleDontSave();
+              }}
+            >
+              Discard
+            </Button>
             <AlertDialogAction
+              type="button"
               onClick={(e) => {
                 e.preventDefault();
                 void handleSaveAndExit();
               }}
             >
-              Save
+              Save and leave
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

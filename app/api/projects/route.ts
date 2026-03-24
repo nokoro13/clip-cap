@@ -192,6 +192,43 @@ export async function POST(request: Request) {
         ? parentProjectId
         : null;
 
+    // Child clips (bulk generate) often save without video metadata; inherit from parent project.
+    if (resolvedParentProjectId && (!resolvedVideoUrl || !resolvedS3Key)) {
+      const parentRows = await db
+        .select({
+          videoUrl: projects.videoUrl,
+          s3Key: projects.s3Key,
+        })
+        .from(projects)
+        .where(
+          and(
+            eq(projects.id, resolvedParentProjectId),
+            eq(projects.userId, userId)
+          )
+        )
+        .limit(1);
+
+      if (parentRows.length > 0) {
+        const parent = parentRows[0];
+
+        if (!resolvedVideoUrl || resolvedVideoUrl.startsWith('blob:')) {
+          if (parent.videoUrl && !parent.videoUrl.startsWith('blob:')) {
+            resolvedVideoUrl = parent.videoUrl;
+          } else if (parent.s3Key) {
+            const bucket = process.env.AWS_S3_UPLOAD_BUCKET;
+            const region = process.env.AWS_REGION;
+            if (bucket && region) {
+              resolvedVideoUrl = `https://${bucket}.s3.${region}.amazonaws.com/${parent.s3Key}`;
+            }
+          }
+        }
+
+        if (!resolvedS3Key && parent.s3Key) {
+          resolvedS3Key = parent.s3Key;
+        }
+      }
+    }
+
     const row = {
       id,
       userId,
@@ -214,7 +251,7 @@ export async function POST(request: Request) {
       updatedAt: new Date(),
     };
 
-    if (existing.length === 0) {
+    if (existing.length === 0 && resolvedParentProjectId === null) {
       const countResult = await db
         .select({ count: count() })
         .from(projects)
@@ -233,47 +270,46 @@ export async function POST(request: Request) {
           { status: 400 }
         );
       }
-
-      await db.insert(projects).values(row);
-    } else {
-      const updatePayload = {
-        title: row.title,
-        type: row.type,
-        status: row.status,
-        progress: row.progress,
-        duration: row.duration,
-        clipsCount: row.clipsCount,
-        s3Key: row.s3Key,
-        videoUrl: row.videoUrl,
-        captions: row.captions,
-        segmentCaptions: row.segmentCaptions,
-        clips: row.clips,
-        fullTranscript: row.fullTranscript,
-        youtubeVideoId: row.youtubeVideoId,
-        editorState: row.editorState,
-        parentProjectId: row.parentProjectId,
-        updatedAt: row.updatedAt,
-        ...(exportStatus === 'idle' && {
-          exportStatus: 'idle' as const,
-          exportUrl: null,
-          exportRenderId: null,
-          exportBucketName: null,
-          exportStartedAt: null,
-          exportProgress: null,
-        }),
-      };
-
-      await db
-        .update(projects)
-        .set(updatePayload)
-        .where(
-          and(
-            eq(projects.id, id),
-            eq(projects.userId, userId),
-            eq(projects.experienceId, experienceId)
-          )
-        );
     }
+
+    const onConflictSet = {
+      title: row.title,
+      type: row.type,
+      status: row.status,
+      progress: row.progress,
+      duration: row.duration,
+      clipsCount: row.clipsCount,
+      s3Key: row.s3Key,
+      videoUrl: row.videoUrl,
+      captions: row.captions,
+      segmentCaptions: row.segmentCaptions,
+      clips: row.clips,
+      fullTranscript: row.fullTranscript,
+      youtubeVideoId: row.youtubeVideoId,
+      editorState: row.editorState,
+      parentProjectId: row.parentProjectId,
+      updatedAt: row.updatedAt,
+      ...(exportStatus === 'idle' && {
+        exportStatus: 'idle' as const,
+        exportUrl: null,
+        exportRenderId: null,
+        exportBucketName: null,
+        exportStartedAt: null,
+        exportProgress: null,
+      }),
+    };
+
+    await db
+      .insert(projects)
+      .values(row)
+      .onConflictDoUpdate({
+        target: projects.id,
+        set: onConflictSet,
+        setWhere: and(
+          eq(projects.userId, userId),
+          eq(projects.experienceId, experienceId)
+        ),
+      });
 
     return NextResponse.json(row);
   } catch (err) {

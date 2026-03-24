@@ -1,3 +1,6 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { NextRequest, NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { eq, and } from 'drizzle-orm';
@@ -5,6 +8,7 @@ import { whopsdk } from '@/lib/whop-sdk';
 import { db } from '@/lib/db';
 import { projects } from '@/lib/db/schema';
 import { analyzeViralFromInput } from '@/lib/analyze-viral';
+import { extractAndUploadBulkClips } from '@/lib/bulk-clip-s3';
 import { getFileForWhisper } from '@/lib/extract-audio';
 
 export const runtime = 'nodejs';
@@ -50,18 +54,25 @@ async function runAnalysisInBackground(
   const startTime = Date.now();
   console.log('[analyze-viral-async] Background job started for', projectId);
 
+  let fullVideoPath: string | null = null;
+
   try {
     const response = await fetch(videoUrl);
     if (!response.ok) {
       throw new Error(`Failed to fetch video from S3: ${response.status}`);
     }
-    const blob = await response.blob();
     const contentType =
       response.headers.get('content-type')?.split(';')[0]?.trim() ||
-      blob.type ||
       'video/mp4';
     const ext = contentType.includes('quicktime') ? 'mov' : 'mp4';
-    const file = new File([blob], `video.${ext}`, { type: contentType });
+    const buffer = Buffer.from(await response.arrayBuffer());
+    fullVideoPath = path.join(
+      os.tmpdir(),
+      `clipcap-bulk-full-${projectId}-${Date.now()}.${ext}`
+    );
+    fs.writeFileSync(fullVideoPath, buffer);
+
+    const file = new File([buffer], `video.${ext}`, { type: contentType });
 
     const { file: fileForWhisper, cleanup } = await getFileForWhisper(file);
     try {
@@ -73,12 +84,33 @@ async function runAnalysisInBackground(
           topics,
         });
 
-      const clipsWithStatus = (clips ?? []).map(
-        (c: { id: string; title: string; startMs: number; endMs: number; viralityScore: number; reason?: string; transcript: string }) => ({
+      let clipsWithStatus = (clips ?? []).map(
+        (c: {
+          id: string;
+          title: string;
+          startMs: number;
+          endMs: number;
+          viralityScore: number;
+          reason?: string;
+          transcript: string;
+          topic?: string;
+        }) => ({
           ...c,
           status: 'all',
         })
       );
+
+      const bucket = process.env.AWS_S3_UPLOAD_BUCKET;
+      const region = process.env.AWS_REGION;
+      if (bucket && region && clipsWithStatus.length > 0) {
+        clipsWithStatus = await extractAndUploadBulkClips(
+          fullVideoPath,
+          projectId,
+          clipsWithStatus,
+          bucket,
+          region
+        );
+      }
 
       const s3Key = extractS3KeyFromUrl(videoUrl);
       const normalizedDuration =
@@ -137,6 +169,14 @@ async function runAnalysisInBackground(
           eq(projects.experienceId, experienceId)
         )
       );
+  } finally {
+    if (fullVideoPath) {
+      try {
+        fs.unlinkSync(fullVideoPath);
+      } catch {
+        // ignore
+      }
+    }
   }
 }
 

@@ -43,6 +43,9 @@ type ViralClip = {
   status: ClipStatus;
   thumbnailUrl?: string;
   topic?: string;
+  /** Standalone MP4 on S3 (bulk generate); editor uses full file like Generate Subtitles */
+  videoUrl?: string;
+  s3Key?: string;
 };
 
 type ProjectData = {
@@ -497,8 +500,11 @@ export default function ProjectGalleryPage() {
     });
   };
 
-  const handleEditClip = (clip: ViralClip) => {
-    if (!project || !videoUrl) {
+  const handleEditClip = async (clip: ViralClip) => {
+    if (!project) return;
+
+    const playUrl = clip.videoUrl || videoUrl;
+    if (!playUrl) {
       alert('Video not available. Please re-upload the video.');
       return;
     }
@@ -512,27 +518,77 @@ export default function ProjectGalleryPage() {
         endMs: c.endMs - clip.startMs,
       }));
 
-    // Store clip data for the editor
-    const editorData = {
-      captions: clipCaptions,
-      duration: (clip.endMs - clip.startMs) / 1000,
-      title: clip.title,
-      clipStartMs: clip.startMs,
-      clipEndMs: clip.endMs,
-      sourceProjectId: project.id,
-      experienceId,
-      youtubeVideoId: project.youtubeVideoId, // So editor can fetch a fresh stream URL
-    };
+    const clipDurationSec = (clip.endMs - clip.startMs) / 1000;
 
-    // Preserve videoTransform and videoAspectRatio if user had previously adjusted crop in editor
-    const existingProject = localStorage.getItem(`project-${clip.id}`);
+    // Per-clip S3 file (bulk): same shape as Generate Subtitles — full video URL, no trim offsets
+    const editorData = clip.videoUrl
+      ? {
+          captions: clipCaptions,
+          duration: clipDurationSec,
+          title: clip.title,
+          sourceProjectId: project.id,
+          experienceId,
+          videoUrl: clip.videoUrl,
+        }
+      : {
+          captions: clipCaptions,
+          duration: clipDurationSec,
+          title: clip.title,
+          clipStartMs: clip.startMs,
+          clipEndMs: clip.endMs,
+          sourceProjectId: project.id,
+          experienceId,
+          youtubeVideoId: project.youtubeVideoId,
+        };
+
     let toSave = editorData as Record<string, unknown>;
+
+    try {
+      const res = await fetch(`/api/projects/${clip.id}`);
+      if (res.ok) {
+        const saved = (await res.json()) as Record<string, unknown>;
+        if (
+          saved.editorState &&
+          typeof saved.editorState === "object" &&
+          !Array.isArray(saved.editorState)
+        ) {
+          toSave = { ...toSave, editorState: saved.editorState };
+        }
+        if (Array.isArray(saved.segmentCaptions) && saved.segmentCaptions.length > 0) {
+          toSave.segmentCaptions = saved.segmentCaptions;
+        }
+        if (Array.isArray(saved.captions) && saved.captions.length > 0) {
+          toSave.captions = saved.captions;
+        }
+        if (typeof saved.duration === "number" && Number.isFinite(saved.duration)) {
+          toSave.duration = saved.duration;
+        }
+        if (typeof saved.title === "string" && saved.title.length > 0) {
+          toSave.title = saved.title;
+        }
+        if (
+          typeof saved.videoUrl === "string" &&
+          saved.videoUrl.length > 0 &&
+          !saved.videoUrl.startsWith("blob:")
+        ) {
+          toSave.videoUrl = saved.videoUrl;
+        }
+        if (
+          typeof saved.parentProjectId === "string" &&
+          saved.parentProjectId.length > 0
+        ) {
+          toSave.sourceProjectId = saved.parentProjectId;
+        }
+      }
+    } catch {
+      // ignore — editor will refetch on load
+    }
+
+    // Preserve local-only fields when API had no row yet
+    const existingProject = localStorage.getItem(`project-${clip.id}`);
     if (existingProject) {
       try {
-        const parsed = JSON.parse(existingProject) as {
-          videoTransform?: unknown;
-          videoAspectRatio?: unknown;
-        };
+        const parsed = JSON.parse(existingProject) as Record<string, unknown>;
         if (parsed.videoTransform) {
           toSave = { ...toSave, videoTransform: parsed.videoTransform };
         }
@@ -542,13 +598,20 @@ export default function ProjectGalleryPage() {
         ) {
           toSave = { ...toSave, videoAspectRatio: parsed.videoAspectRatio };
         }
+        if (
+          !toSave.editorState &&
+          parsed.editorState &&
+          typeof parsed.editorState === "object" &&
+          !Array.isArray(parsed.editorState)
+        ) {
+          toSave = { ...toSave, editorState: parsed.editorState };
+        }
       } catch {
         // ignore
       }
     }
 
-    // Store the video URL in sessionStorage for the editor (editor will refresh from API if youtubeVideoId)
-    sessionStorage.setItem(`video-${clip.id}`, videoUrl);
+    sessionStorage.setItem(`video-${clip.id}`, playUrl);
     localStorage.setItem(`project-${clip.id}`, JSON.stringify(toSave));
 
     // Navigate to editor
@@ -584,7 +647,7 @@ export default function ProjectGalleryPage() {
         <Loader2 className="mb-4 size-8 animate-spin text-primary" />
         <h2 className="mb-2 text-xl font-semibold">Analyzing Video</h2>
         <p className="mb-4 text-muted-foreground">
-          Finding viral moments... This may take 1–2 minutes for longer videos.
+          Finding viral moments and preparing each clip… This may take several minutes for longer videos.
         </p>
         <p className="text-sm text-muted-foreground">
           You can leave this page and come back—we&apos;ll keep processing.
@@ -732,9 +795,11 @@ export default function ProjectGalleryPage() {
               {/* Video Preview */}
               <div className="relative aspect-[9/16] bg-muted">
                 <ClipVideoPreview
-                  videoUrl={videoUrl}
-                  startMs={clip.startMs}
-                  endMs={clip.endMs}
+                  videoUrl={clip.videoUrl || videoUrl}
+                  startMs={clip.videoUrl ? 0 : clip.startMs}
+                  endMs={
+                    clip.videoUrl ? clip.endMs - clip.startMs : clip.endMs
+                  }
                   isPlaying={playingClipId === clip.id}
                   onPlayToggle={() =>
                     setPlayingClipId(playingClipId === clip.id ? null : clip.id)
@@ -788,7 +853,7 @@ export default function ProjectGalleryPage() {
                   size="sm"
                   variant="secondary"
                   className="flex-1"
-                  onClick={() => handleEditClip(clip)}
+                  onClick={() => void handleEditClip(clip)}
                   type="button"
                 >
                   <Edit className="mr-1 size-3" />

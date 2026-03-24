@@ -121,6 +121,7 @@ export async function GET(
       fullTranscript: p.fullTranscript,
       youtubeVideoId: p.youtubeVideoId,
       experienceId: p.experienceId,
+      parentProjectId: p.parentProjectId,
       editorState: p.editorState,
       createdAt: p.createdAt,
       exportStatus: p.exportStatus ?? 'idle',
@@ -155,7 +156,7 @@ export async function DELETE(
 
   try {
     const rows = await db
-      .select({ s3Key: projects.s3Key })
+      .select({ s3Key: projects.s3Key, clips: projects.clips })
       .from(projects)
       .where(
         and(
@@ -169,11 +170,23 @@ export async function DELETE(
       return NextResponse.json({ error: 'Project not found' }, { status: 404 });
     }
 
-    const s3Key = rows[0].s3Key;
+    const keysToDelete = new Set<string>();
+    const rootS3Key = rows[0].s3Key;
+    if (rootS3Key && rootS3Key.startsWith('uploads/')) {
+      keysToDelete.add(rootS3Key);
+    }
+    const clipsJson = rows[0].clips as Array<{ s3Key?: string }> | null | undefined;
+    if (Array.isArray(clipsJson)) {
+      for (const c of clipsJson) {
+        if (typeof c?.s3Key === 'string' && c.s3Key.startsWith('uploads/')) {
+          keysToDelete.add(c.s3Key);
+        }
+      }
+    }
 
     // Fetch clip IDs before deleting (for frontend cleanup)
     const clipRows = await db
-      .select({ id: projects.id })
+      .select({ id: projects.id, s3Key: projects.s3Key })
       .from(projects)
       .where(
         and(
@@ -182,6 +195,12 @@ export async function DELETE(
         )
       );
     const deletedClipIds = clipRows.map((r) => r.id);
+
+    for (const cr of clipRows) {
+      if (cr.s3Key && cr.s3Key.startsWith('uploads/')) {
+        keysToDelete.add(cr.s3Key);
+      }
+    }
 
     // Delete associated clips first (projects with this as parentProjectId)
     await db
@@ -203,11 +222,11 @@ export async function DELETE(
         )
       );
 
-    if (s3Key && s3Key.startsWith('uploads/')) {
+    for (const key of keysToDelete) {
       try {
-        await deleteS3Object(s3Key);
+        await deleteS3Object(key);
       } catch (s3Err) {
-        console.error('Failed to delete S3 object:', s3Err);
+        console.error('Failed to delete S3 object:', key, s3Err);
       }
     }
 
