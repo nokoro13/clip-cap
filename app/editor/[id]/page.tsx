@@ -2833,8 +2833,8 @@ export default function EditorPage() {
   if (isLoading) {
     return (
       <div className="flex h-screen items-center justify-center bg-background text-foreground">
-        <div className="text-center">
-          <div className="mb-4 size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
+        <div className="text-center flex flex-col items-center gap-2">
+          <div className="size-8 animate-spin rounded-full border-4 border-primary border-t-transparent" />
           <p className="text-muted-foreground">Loading editor...</p>
         </div>
       </div>
@@ -2887,7 +2887,6 @@ export default function EditorPage() {
           >
             <ArrowLeft className="size-5" />
           </button>
-          <h1 className="text-lg font-semibold">ClipCap Editor</h1>
         </div>
         <div className="flex items-center gap-2">
           <ModeToggle />
@@ -2896,6 +2895,7 @@ export default function EditorPage() {
               <Button
                 type="button"
                 variant="destructive"
+					 size="sm"
                 disabled={exportDownloadPreparing}
                 aria-busy={exportDownloadPreparing}
                 onClick={() => void handleExportedClipDownload()}
