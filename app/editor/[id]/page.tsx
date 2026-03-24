@@ -42,6 +42,10 @@ import { cn } from "@/lib/utils";
 import { getVideoBlobUrl } from "@/lib/video-storage";
 import { uploadBlobToS3 } from "@/lib/upload-video-s3";
 import {
+  saveExportedClipVideo,
+  shouldUseShareSheetForExport,
+} from "@/lib/export-video-download";
+import {
   FONTS_LIST,
   getFontDisplayName,
   SYSTEM_FONT,
@@ -1261,6 +1265,9 @@ export default function EditorPage() {
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
+  const [exportDownloadPreparing, setExportDownloadPreparing] = useState(false);
+  const [exportDownloadButtonLabel, setExportDownloadButtonLabel] =
+    useState("Download");
   const [activeExportProjectId, setActiveExportProjectId] = useState<string | null>(null);
   const [pendingExportResume, setPendingExportResume] = useState<{
     renderId: string;
@@ -1750,7 +1757,9 @@ export default function EditorPage() {
               const downloadUrl = `/api/download/export?renderId=${encodeURIComponent(renderId)}&bucket=${encodeURIComponent(bucketName)}`;
               setExportDownloadUrl(downloadUrl);
             }
-            alert("Video exported! Tap Download button to save.");
+            alert(
+              "Video exported! Use the button in the header to save your video (on iPhone: Save clip → Save to Files)."
+            );
           }
           if (progress.fatalErrorEncountered) {
             throw new Error("Render failed: " + JSON.stringify(progress.errors));
@@ -1849,6 +1858,12 @@ export default function EditorPage() {
     setIsLoading(true);
     savedPayloadDigestBaselineRef.current = null;
   }, [params.id]);
+
+  useLayoutEffect(() => {
+    if (shouldUseShareSheetForExport()) {
+      setExportDownloadButtonLabel("Save clip");
+    }
+  }, []);
 
   // Persist to localStorage; API save only via explicit "Save" in the leave dialog (strict per-clip).
   useEffect(() => {
@@ -2539,7 +2554,9 @@ export default function EditorPage() {
             const downloadUrl = `/api/download/export?renderId=${encodeURIComponent(renderId)}&bucket=${encodeURIComponent(bucketName)}`;
             setExportDownloadUrl(downloadUrl);
           }
-          alert("Video exported! Tap Download button to save.");
+          alert(
+            "Video exported! Use the button in the header to save your video (on iPhone: Save clip → Save to Files)."
+          );
         }
 
         if (progress.fatalErrorEncountered) {
@@ -2571,6 +2588,19 @@ export default function EditorPage() {
     videoAspectRatio,
     compositionDuration,
   ]);
+
+  const handleExportedClipDownload = useCallback(async () => {
+    if (!exportDownloadUrl) return;
+    setExportDownloadPreparing(true);
+    try {
+      const result = await saveExportedClipVideo(exportDownloadUrl);
+      if (!result.ok) {
+        alert(result.message);
+      }
+    } finally {
+      setExportDownloadPreparing(false);
+    }
+  }, [exportDownloadUrl]);
 
   const handleSeek = useCallback(
     (frame: number) => {
@@ -2863,11 +2893,17 @@ export default function EditorPage() {
           <ModeToggle />
           {exportDownloadUrl ? (
             <div className="flex items-center gap-2">
-              <Button variant="destructive" asChild>
-                <a href={exportDownloadUrl} download="clip.mp4">
-                  <Download className="mr-2 size-4" />
-                  Download
-                </a>
+              <Button
+                type="button"
+                variant="destructive"
+                disabled={exportDownloadPreparing}
+                aria-busy={exportDownloadPreparing}
+                onClick={() => void handleExportedClipDownload()}
+              >
+                <Download className="mr-2 size-4" />
+                {exportDownloadPreparing
+                  ? "Preparing…"
+                  : exportDownloadButtonLabel}
               </Button>
               <Button
                 variant="outline"
