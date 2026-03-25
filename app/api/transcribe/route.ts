@@ -1,10 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { openAiWhisperApiToCaptions } from '@remotion/openai-whisper';
-import { openai } from '@/lib/openai';
 import { getFileForWhisper } from '@/lib/extract-audio';
+import {
+  transcribeWhisperVerboseWithChunking,
+  whisperDurationToSeconds,
+} from '@/lib/whisper-chunked';
 
 export const runtime = 'nodejs';
-export const maxDuration = 60;
+/** Chunked Whisper for long audio can exceed 60s (several API calls). */
+export const maxDuration = 300;
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,13 +44,7 @@ export async function POST(request: NextRequest) {
     // For large video files, extract audio first to stay under Whisper's 25MB limit
     const { file: fileForWhisper, cleanup } = await getFileForWhisper(file);
     try {
-      // Transcribe using OpenAI Whisper with both word and segment timestamps
-      const transcription = await openai.audio.transcriptions.create({
-        file: fileForWhisper,
-        model: 'whisper-1',
-        response_format: 'verbose_json',
-        timestamp_granularities: ['word', 'segment'],
-      });
+      const transcription = await transcribeWhisperVerboseWithChunking(fileForWhisper);
 
     // Convert to Remotion Caption format (word-level for highlighting)
     const { captions: wordCaptions } = openAiWhisperApiToCaptions({ transcription });
@@ -77,7 +75,7 @@ export async function POST(request: NextRequest) {
       success: true,
       captions: wordCaptions, // Word-level captions (original behavior)
       segmentCaptions, // Segment captions with embedded word timings
-      duration: transcription.duration || 0,
+      duration: whisperDurationToSeconds(transcription.duration),
       language: transcription.language || 'en',
       text: transcription.text,
     });

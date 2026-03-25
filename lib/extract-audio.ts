@@ -21,7 +21,8 @@ function isVideoFile(file: File): boolean {
 
 /**
  * Extract audio from a video file using ffmpeg.
- * Returns a smaller MP3 file suitable for Whisper API (25MB limit).
+ * Returns an MP3 file for Whisper. Files above ~24MB are transcribed in time-aligned
+ * chunks in `transcribeWhisperVerboseWithChunking` (see lib/whisper-chunked.ts).
  * Caller must call cleanup() when done.
  */
 export async function extractAudioFromVideo(

@@ -2,6 +2,10 @@ import { openAiWhisperApiToCaptions } from '@remotion/openai-whisper';
 import type { Caption } from '@remotion/captions';
 import { openai } from '@/lib/openai';
 import { getFileForWhisper } from '@/lib/extract-audio';
+import {
+  transcribeWhisperVerboseWithChunking,
+  whisperDurationToSeconds,
+} from '@/lib/whisper-chunked';
 
 const VIRAL_DETECTION_PROMPT = `You are an expert at identifying viral short-form video content. Analyze the video transcript and identify the most engaging, shareable, and viral-worthy moments that would work well as TikTok, YouTube Shorts, or Instagram Reels clips.
 
@@ -163,6 +167,199 @@ Return ONLY a JSON array with this structure:
 Include clips with viralityScore >= 60. Prefer 65+ when possible, but include 60-64 to ensure you reach the minimum clip count. Only include 55-59 if absolutely needed to reach 8+ clips. Never include clips below 55.
 Remember: Aim for AT LEAST 8 clips (10+ for videos over 10 minutes). Scan the entire transcript thoroughly—longer videos have many more viable moments.
 No other text outside the JSON array.`;
+
+/** If estimated input tokens exceed this, use overlapping transcript windows (avoids gpt-4o TPM / huge single requests). */
+const VIRAL_SINGLE_CALL_MAX_INPUT_TOKENS_ESTIMATE = 18_000;
+
+/** Also window if raw transcript is huge (char heuristic can underestimate vs. OpenAI tokenizer). */
+const VIRAL_SINGLE_PASS_MAX_TRANSCRIPT_CHARS = 28_000;
+
+const VIRAL_WINDOW_SECONDS = 600;
+/** Step < window so max 90s clips always fit entirely in at least one window (600 - 480 = 120s overlap). */
+const VIRAL_WINDOW_STEP_SECONDS = 480;
+const VIRAL_WINDOW_CONTEXT_PAD_SECONDS = 45;
+const VIRAL_WINDOW_MAX_CLIPS = 6;
+const VIRAL_WINDOW_MAX_OUTPUT_TOKENS = 3500;
+
+function roughInputTokenEstimate(text: string): number {
+  return Math.ceil(text.length / 4);
+}
+
+type ViralMoment = {
+  startSeconds: number;
+  endSeconds: number;
+  title: string;
+  viralityScore: number;
+  reason: string;
+  topic?: string;
+};
+
+function buildTranscriptWithTimestamps(captions: Caption[]): string {
+  return captions
+    .map((c) => `[${formatSeconds(c.startMs / 1000)}] ${c.text}`)
+    .join('\n');
+}
+
+/** Transcript lines for captions overlapping [sliceStartSec, sliceEndSec] (absolute timeline). */
+function buildTranscriptSlice(
+  captions: Caption[],
+  sliceStartSec: number,
+  sliceEndSec: number
+): string {
+  const fromMs = sliceStartSec * 1000;
+  const toMs = sliceEndSec * 1000;
+  const slice = captions.filter((c) => c.endMs > fromMs && c.startMs < toMs);
+  return buildTranscriptWithTimestamps(slice);
+}
+
+function planAbsoluteWindows(durationSec: number): Array<{ strictStart: number; strictEnd: number }> {
+  if (durationSec <= 0) return [{ strictStart: 0, strictEnd: 0 }];
+  const windows: Array<{ strictStart: number; strictEnd: number }> = [];
+  let ws = 0;
+  while (ws < durationSec) {
+    const strictEnd = Math.min(durationSec, ws + VIRAL_WINDOW_SECONDS);
+    windows.push({ strictStart: ws, strictEnd });
+    if (strictEnd >= durationSec) break;
+    ws += VIRAL_WINDOW_STEP_SECONDS;
+  }
+  return windows;
+}
+
+function parseViralMomentsFromGptContent(content: string): ViralMoment[] {
+  const jsonMatch = content.match(/\[[\s\S]*\]/);
+  if (!jsonMatch) {
+    throw new Error('Could not parse viral moments from response');
+  }
+  return JSON.parse(jsonMatch[0]) as ViralMoment[];
+}
+
+/** Drop clips the model placed outside the allowed absolute range (small tolerance for rounding). */
+function clampMomentsToWindow(
+  moments: ViralMoment[],
+  strictStart: number,
+  strictEnd: number
+): ViralMoment[] {
+  const tol = 2;
+  return moments.filter(
+    (m) =>
+      Number.isFinite(m.startSeconds) &&
+      Number.isFinite(m.endSeconds) &&
+      m.endSeconds > m.startSeconds &&
+      m.startSeconds >= strictStart - tol &&
+      m.endSeconds <= strictEnd + tol
+  );
+}
+
+/**
+ * Remove near-duplicates from overlapping windows (keep higher viralityScore).
+ */
+function dedupeViralMoments(moments: ViralMoment[]): ViralMoment[] {
+  const sorted = [...moments].sort((a, b) => b.viralityScore - a.viralityScore);
+  const kept: ViralMoment[] = [];
+  for (const m of sorted) {
+    const mLen = m.endSeconds - m.startSeconds;
+    if (mLen <= 0) continue;
+    const isDup = kept.some((k) => {
+      const kLen = k.endSeconds - k.startSeconds;
+      if (kLen <= 0) return false;
+      const i0 = Math.max(m.startSeconds, k.startSeconds);
+      const i1 = Math.min(m.endSeconds, k.endSeconds);
+      const inter = Math.max(0, i1 - i0);
+      const minLen = Math.min(mLen, kLen);
+      return minLen > 0 && inter / minLen > 0.55;
+    });
+    if (!isDup) kept.push(m);
+  }
+  return kept;
+}
+
+async function fetchViralMomentsSinglePass(userPrompt: string): Promise<ViralMoment[]> {
+  const gptResponse = await openai.chat.completions.create({
+    model: 'gpt-4o',
+    messages: [
+      { role: 'system', content: VIRAL_DETECTION_PROMPT },
+      { role: 'user', content: userPrompt },
+    ],
+    temperature: 0.5,
+    max_tokens: 8000,
+  });
+  const content = gptResponse.choices[0]?.message?.content;
+  if (!content) {
+    throw new Error('No response from AI analysis');
+  }
+  return parseViralMomentsFromGptContent(content);
+}
+
+async function fetchViralMomentsWindowed(
+  captions: Caption[],
+  duration: number,
+  topicInstruction: string
+): Promise<ViralMoment[]> {
+  const windows = planAbsoluteWindows(duration);
+  const all: ViralMoment[] = [];
+
+  console.log(
+    `[analyze-viral] Windowed gpt-4o: ${windows.length} window(s) for ${Math.round(duration)}s video`
+  );
+
+  for (let i = 0; i < windows.length; i++) {
+    if (i > 0) {
+      await new Promise((r) => setTimeout(r, 400));
+    }
+    const { strictStart, strictEnd } = windows[i];
+    const pad = VIRAL_WINDOW_CONTEXT_PAD_SECONDS;
+    const sliceStart = Math.max(0, strictStart - pad);
+    const sliceEnd = Math.min(duration, strictEnd + pad);
+    const excerpt = buildTranscriptSlice(captions, sliceStart, sliceEnd);
+
+    const userPrompt = `WINDOW ${i + 1} of ${windows.length} (long video — other windows cover the rest).
+
+Full video duration: ${formatSeconds(duration)} (${duration} seconds).
+This window's allowed clip range: startSeconds and endSeconds must BOTH fall between ${strictStart} and ${strictEnd} (absolute seconds from the start of the video). Each clip must lie entirely inside this range.
+
+OVERRIDE for this request only: Return up to ${VIRAL_WINDOW_MAX_CLIPS} clips (score 60+) found in this range. Do not aim for 8+ clips here — another pass merges windows.
+
+Transcript excerpt (timestamps are absolute, same timeline as the full video):
+${excerpt}
+${topicInstruction}
+
+Find the strongest viral moments in this time range only. Use absolute startSeconds/endSeconds. Follow setup/payoff and dialog-density rules from the system message.`;
+
+    const est = roughInputTokenEstimate(VIRAL_DETECTION_PROMPT + userPrompt);
+    if (est > 28_000) {
+      console.warn(
+        `[analyze-viral] Window ${i + 1}/${windows.length} still large (~${est} est. input tokens); TPM risk`
+      );
+    }
+
+    try {
+      const gptResponse = await openai.chat.completions.create({
+        model: 'gpt-4o',
+        messages: [
+          { role: 'system', content: VIRAL_DETECTION_PROMPT },
+          { role: 'user', content: userPrompt },
+        ],
+        temperature: 0.5,
+        max_tokens: VIRAL_WINDOW_MAX_OUTPUT_TOKENS,
+      });
+      const content = gptResponse.choices[0]?.message?.content;
+      if (!content) continue;
+      const parsed = parseViralMomentsFromGptContent(content);
+      all.push(...clampMomentsToWindow(parsed, strictStart, strictEnd));
+    } catch (e) {
+      console.warn(
+        `[analyze-viral] Window ${i + 1}/${windows.length} failed:`,
+        e instanceof Error ? e.message : e
+      );
+    }
+  }
+
+  if (all.length === 0) {
+    throw new Error('No viral moments returned from any transcript window');
+  }
+
+  return dedupeViralMoments(all);
+}
 
 function formatSeconds(seconds: number): string {
   const mins = Math.floor(seconds / 60);
@@ -340,16 +537,9 @@ export async function analyzeViralFromInput(
   if (file) {
     const { file: fileForWhisper, cleanup } = await getFileForWhisper(file);
     try {
-      const transcription = await openai.audio.transcriptions.create({
-        file: fileForWhisper,
-        model: 'whisper-1',
-        response_format: 'verbose_json',
-        timestamp_granularities: ['word', 'segment'],
-      });
+      const transcription = await transcribeWhisperVerboseWithChunking(fileForWhisper);
 
-      const segments = (transcription as {
-        segments?: Array<{ start: number; end: number; text: string }>;
-      }).segments || [];
+      const segments = transcription.segments || [];
 
       try {
         const normalized = normalizeTranscriptionForRemotion(transcription);
@@ -363,7 +553,7 @@ export async function analyzeViralFromInput(
         captions = buildCaptionsFromSegments(segments);
       }
 
-      duration = transcription.duration || 0;
+      duration = whisperDurationToSeconds(transcription.duration);
 
       segmentCaptions = segments.map((segment) => {
         const segmentWords = captions.filter(
@@ -394,16 +584,9 @@ export async function analyzeViralFromInput(
     const blob = await response.blob();
     const audioFile = new File([blob], 'audio.mp3', { type: 'audio/mpeg' });
 
-    const transcription = await openai.audio.transcriptions.create({
-      file: audioFile,
-      model: 'whisper-1',
-      response_format: 'verbose_json',
-      timestamp_granularities: ['word', 'segment'],
-    });
+    const transcription = await transcribeWhisperVerboseWithChunking(audioFile);
 
-    const segments = (transcription as {
-      segments?: Array<{ start: number; end: number; text: string }>;
-    }).segments || [];
+    const segments = transcription.segments || [];
 
     try {
       const normalized = normalizeTranscriptionForRemotion(transcription);
@@ -418,7 +601,8 @@ export async function analyzeViralFromInput(
     }
 
     duration =
-      transcription.duration || (videoDuration ? parseInt(videoDuration, 10) : 0);
+      whisperDurationToSeconds(transcription.duration) ||
+      (videoDuration ? parseInt(videoDuration, 10) : 0);
 
     segmentCaptions = segments.map((segment) => {
       const segmentWords = captions.filter(
@@ -441,9 +625,7 @@ export async function analyzeViralFromInput(
     throw new Error('No file or audio URL provided');
   }
 
-  const transcriptWithTimestamps = captions
-    .map((c) => `[${formatSeconds(c.startMs / 1000)}] ${c.text}`)
-    .join('\n');
+  const transcriptWithTimestamps = buildTranscriptWithTimestamps(captions);
 
   const totalWords = captions.map((c) => c.text).join(' ').split(/\s+/).filter(Boolean).length;
   const wordsPerMinute = duration > 0 ? Math.round((totalWords / duration) * 60) : 0;
@@ -454,7 +636,7 @@ export async function analyzeViralFromInput(
       : '';
 
   const targetClips = duration >= 600 ? '10-15' : 'at least 8';
-  const userPrompt = `Video Duration: ${formatSeconds(duration)} (${duration} seconds)
+  const singlePassUserPrompt = `Video Duration: ${formatSeconds(duration)} (${duration} seconds)
 Transcript summary: ${totalWords} total words (~${wordsPerMinute} words/min). Each clip MUST have at least 12 words and ≥1.0 words/second—avoid segments with sparse dialog.
 
 Transcript:
@@ -465,34 +647,17 @@ Find ${targetClips} viral moments from this content. Include clips scoring 60 or
 
 CRITICAL for title and reason: Follow the TITLE AND DESCRIPTION GENERATION PROCESS. Read ONLY the transcript words within each clip's time range. The title and reason must accurately summarize what is actually said in that segment. Do not use titles or descriptions from other parts of the video.`;
 
-  const gptResponse = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      { role: 'system', content: VIRAL_DETECTION_PROMPT },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.5,
-    max_tokens: 8000,
-  });
+  const singleCallInputEstimate =
+    roughInputTokenEstimate(VIRAL_DETECTION_PROMPT) +
+    roughInputTokenEstimate(singlePassUserPrompt);
 
-  const content = gptResponse.choices[0]?.message?.content;
-  if (!content) {
-    throw new Error('No response from AI analysis');
-  }
+  const useWindowed =
+    singleCallInputEstimate > VIRAL_SINGLE_CALL_MAX_INPUT_TOKENS_ESTIMATE ||
+    transcriptWithTimestamps.length > VIRAL_SINGLE_PASS_MAX_TRANSCRIPT_CHARS;
 
-  const jsonMatch = content.match(/\[[\s\S]*\]/);
-  if (!jsonMatch) {
-    throw new Error('Could not parse viral moments from response');
-  }
-
-  const moments: Array<{
-    startSeconds: number;
-    endSeconds: number;
-    title: string;
-    viralityScore: number;
-    reason: string;
-    topic?: string;
-  }> = JSON.parse(jsonMatch[0]);
+  const moments: ViralMoment[] = useWindowed
+    ? await fetchViralMomentsWindowed(captions, duration, topicInstruction)
+    : await fetchViralMomentsSinglePass(singlePassUserPrompt);
 
   const MIN_CLIP_SECONDS = 10;
   const MAX_CLIP_SECONDS = 90;
