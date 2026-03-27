@@ -1,9 +1,12 @@
 import fs from 'node:fs';
 import { NextRequest, NextResponse } from 'next/server';
+import { headers } from 'next/headers';
 import { analyzeViralFromInput } from '@/lib/analyze-viral';
 import { downloadYouTubeAudioToFile } from '@/lib/download-youtube-audio';
 import { getYouTubeInfoFromYtDlp } from '@/lib/yt-dlp';
 import { parseYouTubeUrl } from '@/lib/video-utils';
+import { whopsdk } from '@/lib/whop-sdk';
+import { canUpload, incrementUsage } from '@/lib/user-service';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -25,6 +28,22 @@ export async function POST(request: NextRequest) {
 
     // If YouTube URL, get video info directly (no internal fetch — avoids SSL issues on Railway)
     if (youtubeUrl) {
+      const { userId } = await whopsdk.verifyUserToken(await headers());
+      if (!userId) {
+        return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+      }
+
+      const gate = await canUpload(userId, 'bulk');
+      if (!gate.allowed) {
+        return NextResponse.json(
+          {
+            error: gate.reason ?? 'Upload limit reached',
+            requiresUpgrade: gate.requiresUpgrade ?? false,
+          },
+          { status: 403 }
+        );
+      }
+
       const videoId = parseYouTubeUrl(youtubeUrl);
       if (!videoId) {
         return NextResponse.json(
@@ -58,6 +77,8 @@ export async function POST(request: NextRequest) {
           videoDuration: video.duration?.toString(),
           topics,
         });
+
+        await incrementUsage(userId, 'bulk');
 
         return NextResponse.json({
           success: true,
@@ -96,6 +117,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Process video error:', error);
+
+    if (error instanceof Error && error.message?.includes('verifyUserToken')) {
+      return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+    }
 
     if (error instanceof Error) {
       return NextResponse.json(

@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { SubscribeDialog } from '@/components/subscribe-dialog';
+import { SubscribeDialog, type SubscribeIntent } from '@/components/subscribe-dialog';
 import { cn } from '@/lib/utils';
 
 interface SimpleUploadDialogProps {
@@ -19,7 +19,11 @@ interface SimpleUploadDialogProps {
   title?: string;
   description?: string;
   /** When set, the drop zone is replaced with a subscribe CTA that opens the tier dialog. */
-  subscriptionGate?: { basicCheckoutUrl: string; premiumCheckoutUrl: string };
+  subscriptionGate?: {
+    basicCheckoutUrl: string;
+    premiumCheckoutUrl: string;
+    intent?: SubscribeIntent;
+  };
 }
 
 export function SimpleUploadDialog({
@@ -103,6 +107,7 @@ export function SimpleUploadDialog({
                 <SubscribeDialog
                   basicCheckoutUrl={subscriptionGate.basicCheckoutUrl}
                   premiumCheckoutUrl={subscriptionGate.premiumCheckoutUrl}
+                  intent={subscriptionGate.intent}
                   trigger={
                     <Button variant="default" size="lg" className="mt-4">
                       Choose a plan

@@ -15,11 +15,18 @@ import { cn } from '@/lib/utils';
 const DEFAULT_BASIC_CHECKOUT_URL = 'https://whop.com/checkout/plan_xtThkvdruzGaa';
 const DEFAULT_PREMIUM_CHECKOUT_URL = 'https://whop.com/checkout/plan_OHjnjQ68gcbct';
 
+export type SubscribeIntent = 'subscribe' | 'upgrade_to_premium';
+
 interface SubscribeDialogProps {
   basicCheckoutUrl?: string;
   premiumCheckoutUrl?: string;
   trigger?: React.ReactNode;
   className?: string;
+  /** subscribe: new member. upgrade_to_premium: Basic user hitting limits or Bulk gate. */
+  intent?: SubscribeIntent;
+  /** Controlled open state (e.g. open when API returns 403). */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 export function SubscribeDialog({
@@ -27,22 +34,44 @@ export function SubscribeDialog({
   premiumCheckoutUrl = DEFAULT_PREMIUM_CHECKOUT_URL,
   trigger,
   className,
+  intent = 'subscribe',
+  open: openProp,
+  onOpenChange: onOpenChangeProp,
 }: SubscribeDialogProps) {
+  const isControlled = openProp !== undefined;
+  const upgrade = intent === 'upgrade_to_premium';
+
   return (
-    <Dialog>
-      <DialogTrigger asChild>
-        {trigger ?? (
-          <Button variant="default" size="lg" className={cn('gap-2', className)}>
-            <Sparkles className="size-4" />
-            Subscribe to get access
-          </Button>
-        )}
-      </DialogTrigger>
+    <Dialog
+      {...(isControlled
+        ? { open: openProp, onOpenChange: onOpenChangeProp }
+        : {})}
+    >
+      {!isControlled ? (
+        <DialogTrigger asChild>
+          {trigger ?? (
+            <Button variant="default" size="lg" className={cn('gap-2', className)}>
+              <Sparkles className="size-4" />
+              Subscribe to get access
+            </Button>
+          )}
+        </DialogTrigger>
+      ) : null}
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>Choose your plan</DialogTitle>
+          <DialogTitle>
+            {upgrade ? 'Upgrade to Premium' : 'Choose your plan'}
+          </DialogTitle>
           <DialogDescription>
-            Subscribe to unlock video uploads, AI subtitles, and bulk generation.
+            {upgrade ? (
+              <>
+                Get <strong>Bulk Generate</strong> (15 per month) and{' '}
+                <strong>75 subtitle</strong> uploads per month. Basic includes 50 subtitle
+                uploads and no bulk access.
+              </>
+            ) : (
+              <>Subscribe to unlock video uploads, AI subtitles, and bulk generation.</>
+            )}
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-2">
@@ -50,17 +79,30 @@ export function SubscribeDialog({
             href={basicCheckoutUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex flex-col gap-2 rounded-xl border border-border bg-muted/30 p-4 text-left transition-colors hover:bg-muted/50 hover:border-primary/30"
+            className={cn(
+              'flex flex-col gap-2 rounded-xl border border-border p-4 text-left transition-colors',
+              upgrade
+                ? 'bg-muted/20 opacity-90 hover:bg-muted/30'
+                : 'bg-muted/30 hover:bg-muted/50 hover:border-primary/30'
+            )}
           >
             <div className="flex items-center justify-between">
               <span className="font-semibold">Basic Access</span>
-              <span className="text-sm text-muted-foreground">3 days free</span>
+              {!upgrade ? (
+                <span className="text-sm text-muted-foreground">3 days free</span>
+              ) : (
+                <span className="text-xs font-medium text-muted-foreground">
+                  Current tier
+                </span>
+              )}
             </div>
             <p className="text-sm text-muted-foreground">
-              Then $19.99 per month. Perfect to get started.
+              {upgrade
+                ? '50 AI subtitle uploads / month. Bulk Generate is not included.'
+                : 'Then $19.99 per month. Perfect to get started.'}
             </p>
             <Button variant="secondary" className="w-full" size="sm">
-              Start free trial
+              {upgrade ? 'Manage Basic' : 'Start free trial'}
             </Button>
           </a>
           <a
@@ -72,14 +114,14 @@ export function SubscribeDialog({
             <div className="flex items-center justify-between">
               <span className="font-semibold">Premium Access</span>
               <span className="rounded bg-primary/20 px-2 py-0.5 text-xs font-medium text-primary">
-                Best value
+                {upgrade ? 'Upgrade' : 'Best value'}
               </span>
             </div>
             <p className="text-sm text-muted-foreground">
-              $29.99 per month. Full access to all features.
+              $29.99 per month. 75 subtitle + 15 bulk uploads per month.
             </p>
             <Button className="w-full" size="sm">
-              Get Premium
+              {upgrade ? 'Upgrade to Premium' : 'Get Premium'}
             </Button>
           </a>
         </div>

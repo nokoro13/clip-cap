@@ -1,9 +1,8 @@
-import { Button } from "@whop/react/components";
 import { headers } from "next/headers";
-import Link from "next/link";
 import { whopsdk } from "@/lib/whop-sdk";
 import { QuickStartCards } from "@/components/quick-start-cards";
 import { RecentProjectsGallery } from "@/components/recent-projects-gallery";
+import { getUserUsageDisplay } from "@/lib/user-service";
 
 export default async function ExperiencePage({
 	params,
@@ -15,10 +14,9 @@ export default async function ExperiencePage({
 	const { userId } = await whopsdk.verifyUserToken(await headers());
 
 	// Fetch the neccessary data we want from whop.
-	const [experience, user, access] = await Promise.all([
+	const [experience, user] = await Promise.all([
 		whopsdk.experiences.retrieve(experienceId),
 		whopsdk.users.retrieve(userId),
-		whopsdk.users.checkAccess(experienceId, { id: userId }),
 	]);
 
 	const displayName = user.name || `@${user.username}`;
@@ -42,6 +40,16 @@ export default async function ExperiencePage({
 		has_access: premiumAccess.has_access || basicAccess.has_access,
 	};
 
+	const accessLevel = premiumAccess.has_access
+		? ("premium" as const)
+		: basicAccess.has_access
+			? ("basic" as const)
+			: null;
+
+	const usageStats = productAccess.has_access
+		? await getUserUsageDisplay(userId)
+		: null;
+
 	return (
 		<div className="flex flex-col p-8 gap-6">
 			<div className="flex justify-between items-center gap-4">
@@ -52,7 +60,21 @@ export default async function ExperiencePage({
 			</div>
 
 			{productAccess.has_access ? (
-				<p className="text-3 text-green-10">You have access to the premium features.</p>
+				<p className="text-3 text-green-10">
+					You have <strong>{accessLevel === "premium" ? "Premium" : "Basic"}</strong>{" "}
+					access.
+					{usageStats ? (
+						<>
+							{" "}
+							Subtitles: {usageStats.generateSubtitles.used}/
+							{usageStats.generateSubtitles.limit} this month
+							{accessLevel === "premium"
+								? ` · Bulk: ${usageStats.bulkGenerate.used}/${usageStats.bulkGenerate.limit}`
+								: ""}
+							.
+						</>
+					) : null}
+				</p>
 			) : (
 				<p className="text-3 text-red-10">You do not have access to the premium features.</p>
 			)}
@@ -62,6 +84,8 @@ export default async function ExperiencePage({
 
 			<QuickStartCards
 				hasAccess={productAccess.has_access}
+				accessLevel={accessLevel}
+				usageStats={usageStats}
 				basicCheckoutUrl={basicCheckoutUrl}
 				premiumCheckoutUrl={premiumCheckoutUrl}
 			/>
@@ -74,7 +98,7 @@ export default async function ExperiencePage({
 			<JsonViewer data={user} />
 
 			<h3 className="text-6 font-bold">Access data</h3>
-			<JsonViewer data={access} /> */}
+			*/}
 		</div>
 	);
 }

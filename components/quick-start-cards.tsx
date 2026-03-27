@@ -1,9 +1,13 @@
 'use client';
 
 import { useRouter, useParams } from 'next/navigation';
-import { Captions, Layers } from 'lucide-react';
+import { useState } from 'react';
+import { Captions, Layers, Lock } from 'lucide-react';
 import { SimpleUploadDialog } from '@/components/simple-upload-dialog';
 import { VideoUploadDialog, type ClipTopicId } from '@/components/video-upload-dialog';
+import { SubscribeDialog, type SubscribeIntent } from '@/components/subscribe-dialog';
+import { UsageBadge } from '@/components/usage-badge';
+import type { UserUsageStats } from '@/lib/user-usage-types';
 import { cn } from '@/lib/utils';
 import { notifyProjectIndexUpdate } from '@/lib/project-index';
 import { saveProjectToApi } from '@/lib/project-api';
@@ -17,6 +21,10 @@ interface QuickStartCardsProps {
   className?: string;
   /** When false, upload cards are disabled and a subscribe CTA is shown. Default true. */
   hasAccess?: boolean;
+  /** From Whop product access; null if no plan. */
+  accessLevel?: 'basic' | 'premium' | null;
+  /** Monthly usage; null when not subscribed. */
+  usageStats?: UserUsageStats | null;
   basicCheckoutUrl?: string;
   premiumCheckoutUrl?: string;
 }
@@ -55,17 +63,50 @@ function createProgressUpdater(
   return { stop };
 }
 
+function checkoutUrls(props: QuickStartCardsProps) {
+  return {
+    basic: props.basicCheckoutUrl ?? DEFAULT_BASIC_CHECKOUT_URL,
+    premium: props.premiumCheckoutUrl ?? DEFAULT_PREMIUM_CHECKOUT_URL,
+  };
+}
+
 export function QuickStartCards({
   className,
   hasAccess = true,
+  accessLevel = null,
+  usageStats = null,
   basicCheckoutUrl = DEFAULT_BASIC_CHECKOUT_URL,
   premiumCheckoutUrl = DEFAULT_PREMIUM_CHECKOUT_URL,
 }: QuickStartCardsProps) {
   const router = useRouter();
   const params = useParams();
   const experienceId = params.experienceId as string;
+  const { basic: basicUrl, premium: premiumUrl } = checkoutUrls({
+    basicCheckoutUrl,
+    premiumCheckoutUrl,
+  });
+
+  const [limitDialogOpen, setLimitDialogOpen] = useState(false);
+  const [limitDialogIntent, setLimitDialogIntent] =
+    useState<SubscribeIntent>('subscribe');
+
+  const openLimitDialog = (intent: SubscribeIntent) => {
+    setLimitDialogIntent(intent);
+    setLimitDialogOpen(true);
+  };
 
   const handleSingleVideoSelect = async (file: File) => {
+    if (usageStats && usageStats.generateSubtitles.used >= usageStats.generateSubtitles.limit) {
+      if (usageStats.accessLevel === 'basic') {
+        openLimitDialog('upgrade_to_premium');
+      } else {
+        alert(
+          'You have used all Premium subtitle uploads for this month. Limits reset when your billing period rolls.'
+        );
+      }
+      return;
+    }
+
     const projectId = `editor-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     await saveProjectToApi(experienceId, {
@@ -94,7 +135,27 @@ export function QuickStartCards({
       });
 
       if (!response.ok) {
-        const error = await response.json();
+        const error = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          requiresUpgrade?: boolean;
+        };
+        if (response.status === 403) {
+          if (error.requiresUpgrade) {
+            openLimitDialog('upgrade_to_premium');
+          } else {
+            alert(error.error || 'Upload limit reached');
+          }
+          progressUpdater.stop();
+          await saveProjectToApi(experienceId, {
+            id: projectId,
+            experienceId,
+            title: file.name,
+            type: 'editor',
+            status: 'error',
+            progress: 0,
+          }).catch(() => {});
+          return;
+        }
         throw new Error(error.error || 'Failed to transcribe video');
       }
 
@@ -134,6 +195,7 @@ export function QuickStartCards({
         segmentCaptions: projectData.segmentCaptions,
       });
 
+      router.refresh();
       router.push(`/editor/${projectId}`);
     } catch (error) {
       progressUpdater.stop();
@@ -151,6 +213,22 @@ export function QuickStartCards({
   };
 
   const handleBulkVideoSelect = async (file: File, topics: ClipTopicId[] = ['auto']) => {
+    if (accessLevel === 'basic') {
+      openLimitDialog('upgrade_to_premium');
+      return;
+    }
+
+    if (
+      usageStats &&
+      usageStats.accessLevel === 'premium' &&
+      usageStats.bulkGenerate.used >= usageStats.bulkGenerate.limit
+    ) {
+      alert(
+        'You have used all bulk uploads for this month. Limits reset when your billing period rolls.'
+      );
+        return;
+    }
+
     const projectId = `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     console.log('[bulk] Started:', file.name, file.size, 'bytes');
@@ -219,7 +297,26 @@ export function QuickStartCards({
       });
 
       if (!asyncRes.ok) {
-        const errData = await asyncRes.json().catch(() => ({ error: 'Unknown error' }));
+        const errData = (await asyncRes.json().catch(() => ({}))) as {
+          error?: string;
+          requiresUpgrade?: boolean;
+        };
+        if (asyncRes.status === 403) {
+          if (errData.requiresUpgrade) {
+            openLimitDialog('upgrade_to_premium');
+          } else {
+            alert(errData.error || 'Upload limit reached');
+          }
+          await saveProjectToApi(experienceId, {
+            id: projectId,
+            experienceId,
+            title: file.name,
+            type: 'project',
+            status: 'error',
+            progress: 0,
+          }).catch(() => {});
+          return;
+        }
         throw new Error(errData.error || 'Failed to start analysis');
       }
 
@@ -238,6 +335,7 @@ export function QuickStartCards({
       );
 
       notifyProjectIndexUpdate();
+      router.refresh();
     } catch (error) {
       console.error('Error analyzing video:', error);
       await saveProjectToApi(experienceId, {
@@ -253,6 +351,22 @@ export function QuickStartCards({
   };
 
   const handleYoutubeUrl = async (url: string, topics: ClipTopicId[] = ['auto']) => {
+    if (accessLevel === 'basic') {
+      openLimitDialog('upgrade_to_premium');
+      return;
+    }
+
+    if (
+      usageStats &&
+      usageStats.accessLevel === 'premium' &&
+      usageStats.bulkGenerate.used >= usageStats.bulkGenerate.limit
+    ) {
+      alert(
+        'You have used all bulk uploads for this month. Limits reset when your billing period rolls.'
+      );
+      return;
+    }
+
     const projectId = `project-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 
     await saveProjectToApi(experienceId, {
@@ -283,7 +397,27 @@ export function QuickStartCards({
       });
 
       if (!response.ok) {
-        const data = await response.json();
+        const data = (await response.json().catch(() => ({}))) as {
+          error?: string;
+          requiresUpgrade?: boolean;
+        };
+        if (response.status === 403) {
+          if (data.requiresUpgrade) {
+            openLimitDialog('upgrade_to_premium');
+          } else {
+            alert(data.error || 'Upload limit reached');
+          }
+          progressUpdater.stop();
+          await saveProjectToApi(experienceId, {
+            id: projectId,
+            experienceId,
+            title: 'YouTube video',
+            type: 'project',
+            status: 'error',
+            progress: 0,
+          }).catch(() => {});
+          return;
+        }
         throw new Error(data.error || 'Failed to process video');
       }
 
@@ -326,6 +460,7 @@ export function QuickStartCards({
         youtubeVideoId: projectData.youtubeVideoId,
       });
 
+      router.refresh();
       router.push(`/projects/${projectId}`);
     } catch (error) {
       progressUpdater.stop();
@@ -353,25 +488,41 @@ export function QuickStartCards({
   };
 
   const subscriptionGate = !hasAccess
-    ? { basicCheckoutUrl, premiumCheckoutUrl }
+    ? { basicCheckoutUrl: basicUrl, premiumCheckoutUrl: premiumUrl }
     : undefined;
+
+  const bulkPremiumGate =
+    hasAccess && accessLevel === 'basic'
+      ? {
+          basicCheckoutUrl: basicUrl,
+          premiumCheckoutUrl: premiumUrl,
+          intent: 'upgrade_to_premium' as const,
+        }
+      : undefined;
 
   const cardContent = (props: {
     icon: React.ReactNode;
     title: string;
     subtitle: string;
+    footer?: React.ReactNode;
+    lockedPremium?: boolean;
   }) => (
     <div
       className={cn(
-        'flex h-full cursor-pointer flex-col items-center justify-center gap-4 rounded-xl bg-muted/50 p-6 transition-all hover:bg-muted hover:shadow-md'
+        'relative flex h-full cursor-pointer flex-col items-center justify-center gap-4 rounded-xl bg-muted/50 p-6 transition-all hover:bg-muted hover:shadow-md'
       )}
     >
-      <div className="flex size-20 items-center justify-center rounded-2xl">
-        {props.icon}
-      </div>
+      {props.lockedPremium ? (
+        <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
+          <Lock className="size-3 shrink-0" aria-hidden />
+          Premium
+        </span>
+      ) : null}
+      <div className="flex size-20 items-center justify-center rounded-2xl">{props.icon}</div>
       <div className="text-center">
         <h3 className="text-base font-semibold">{props.title}</h3>
         <p className="mt-1 text-sm text-muted-foreground">{props.subtitle}</p>
+        {props.footer}
       </div>
     </div>
   );
@@ -397,6 +548,15 @@ export function QuickStartCards({
                 ),
                 title: 'Generate Subtitles',
                 subtitle: 'Get trendy AI captions in just one click',
+                footer:
+                  usageStats && hasAccess ? (
+                    <UsageBadge
+                      label="Subtitles"
+                      used={usageStats.generateSubtitles.used}
+                      limit={usageStats.generateSubtitles.limit}
+                      className="mt-2"
+                    />
+                  ) : null,
               })}
             </button>
           }
@@ -408,7 +568,7 @@ export function QuickStartCards({
           onYoutubeUrl={handleYoutubeUrl}
           onGoogleDriveImport={handleGoogleDriveImport}
           onSampleVideoSelect={handleSampleVideoSelect}
-          subscriptionGate={subscriptionGate}
+          subscriptionGate={subscriptionGate ?? bulkPremiumGate}
           trigger={
             <button type="button" className="h-full w-full text-left">
               {cardContent({
@@ -419,11 +579,33 @@ export function QuickStartCards({
                 ),
                 title: 'Bulk Generate',
                 subtitle: 'Process multiple videos or YouTube links',
+                lockedPremium: accessLevel === 'basic' && hasAccess,
+                footer:
+                  usageStats && hasAccess && accessLevel === 'premium' ? (
+                    <UsageBadge
+                      label="Bulk"
+                      used={usageStats.bulkGenerate.used}
+                      limit={usageStats.bulkGenerate.limit}
+                      className="mt-2"
+                    />
+                  ) : accessLevel === 'basic' && hasAccess ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      Included with Premium (15/month)
+                    </p>
+                  ) : null,
               })}
             </button>
           }
         />
       </div>
+
+      <SubscribeDialog
+        open={limitDialogOpen}
+        onOpenChange={setLimitDialogOpen}
+        intent={limitDialogIntent}
+        basicCheckoutUrl={basicUrl}
+        premiumCheckoutUrl={premiumUrl}
+      />
     </div>
   );
 }

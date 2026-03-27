@@ -60,3 +60,22 @@ export const projects = pgTable(
 
 export type Project = typeof projects.$inferSelect;
 export type NewProject = typeof projects.$inferInsert;
+
+/** Monthly usage + tier cache (synced from Whop product access). */
+export const users = pgTable('users', {
+  userId: text('user_id').primaryKey(),
+  accessLevel: text('access_level')
+    .notNull()
+    .$type<'basic' | 'premium'>(),
+  generateSubtitlesCount: integer('generate_subtitles_count').notNull().default(0),
+  bulkGenerateCount: integer('bulk_generate_count').notNull().default(0),
+  /** Start of current billing period; counts reset every ~30 days. */
+  currentPeriodStart: timestamp('current_period_start', {
+    withTimezone: true,
+  }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+});
+
+export type AppUser = typeof users.$inferSelect;
+export type NewAppUser = typeof users.$inferInsert;

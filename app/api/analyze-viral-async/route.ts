@@ -10,6 +10,7 @@ import { projects } from '@/lib/db/schema';
 import { analyzeViralFromInput } from '@/lib/analyze-viral';
 import { extractAndUploadBulkClips } from '@/lib/bulk-clip-s3';
 import { getFileForWhisper } from '@/lib/extract-audio';
+import { canUpload, incrementUsage } from '@/lib/user-service';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30; // Short - we return immediately, background runs separately
@@ -225,6 +226,17 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
+    const gate = await canUpload(userId, 'bulk');
+    if (!gate.allowed) {
+      return NextResponse.json(
+        {
+          error: gate.reason ?? 'Upload limit reached',
+          requiresUpgrade: gate.requiresUpgrade ?? false,
+        },
+        { status: 403 }
+      );
+    }
+
     const body = await request.json();
     const {
       videoUrl,
@@ -309,6 +321,8 @@ export async function POST(request: NextRequest) {
     ).catch((e) => {
       console.error('[analyze-viral-async] Background promise rejected:', e);
     });
+
+    await incrementUsage(userId, 'bulk');
 
     console.log('[analyze-viral-async] Job queued for', projectId);
 

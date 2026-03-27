@@ -10,7 +10,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/button';
-import { SubscribeDialog } from '@/components/subscribe-dialog';
+import { SubscribeDialog, type SubscribeIntent } from '@/components/subscribe-dialog';
 import { cn } from '@/lib/utils';
 
 export const CLIP_TOPICS = [
@@ -32,7 +32,11 @@ interface VideoUploadDialogProps {
   onSampleVideoSelect?: () => void;
   trigger?: React.ReactNode;
   /** When set, the upload UI is replaced with a subscribe CTA that opens the tier dialog. */
-  subscriptionGate?: { basicCheckoutUrl: string; premiumCheckoutUrl: string };
+  subscriptionGate?: {
+    basicCheckoutUrl: string;
+    premiumCheckoutUrl: string;
+    intent?: SubscribeIntent;
+  };
 }
 
 const MAX_TOPICS = 3;
@@ -140,13 +144,20 @@ export function VideoUploadDialog({
                 <Lock className="size-7 text-amber-600 dark:text-amber-500" />
               </div>
               <div className="text-center">
-                <p className="text-lg font-medium">Subscribe to unlock</p>
+                <p className="text-lg font-medium">
+                  {subscriptionGate.intent === 'upgrade_to_premium'
+                    ? 'Premium feature'
+                    : 'Subscribe to unlock'}
+                </p>
                 <p className="mt-2 text-sm text-muted-foreground">
-                  Choose a plan to bulk process videos and get viral clips.
+                  {subscriptionGate.intent === 'upgrade_to_premium'
+                    ? 'Bulk Generate is included with Premium. Upgrade to process multiple videos and YouTube links.'
+                    : 'Choose a plan to bulk process videos and get viral clips.'}
                 </p>
                 <SubscribeDialog
                   basicCheckoutUrl={subscriptionGate.basicCheckoutUrl}
                   premiumCheckoutUrl={subscriptionGate.premiumCheckoutUrl}
+                  intent={subscriptionGate.intent}
                   trigger={
                     <Button variant="default" size="lg" className="mt-4">
                       Choose a plan
