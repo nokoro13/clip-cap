@@ -27,7 +27,32 @@ function getProductIds(): { premiumProductId: string; basicProductId: string | n
   return { premiumProductId, basicProductId };
 }
 
-async function resolveAccessFromWhop(userId: string): Promise<AccessLevel | null> {
+/** Whop sends renewal boundaries as Unix seconds (string). */
+export function renewalEpochToDate(epoch: string | null | undefined): Date | null {
+  if (epoch == null || epoch === '') return null;
+  const n = Number(epoch);
+  if (!Number.isFinite(n)) return null;
+  return new Date(n * 1000);
+}
+
+export function isTrackedWhopProductId(productId: string | null | undefined): boolean {
+  if (!productId) return false;
+  const { premiumProductId, basicProductId } = getProductIds();
+  if (productId === premiumProductId) return true;
+  return basicProductId != null && productId === basicProductId;
+}
+
+export function accessLevelForTrackedProduct(
+  productId: string | null | undefined
+): AccessLevel | null {
+  if (!productId) return null;
+  const { premiumProductId, basicProductId } = getProductIds();
+  if (productId === premiumProductId) return 'premium';
+  if (basicProductId != null && productId === basicProductId) return 'basic';
+  return null;
+}
+
+export async function resolveAccessFromWhop(userId: string): Promise<AccessLevel | null> {
   const { premiumProductId, basicProductId } = getProductIds();
   const [premiumAccess, basicAccess] = await Promise.all([
     whopsdk.users.checkAccess(premiumProductId, { id: userId }),
@@ -69,6 +94,7 @@ export async function ensureUserSynced(userId: string): Promise<AppUser | null> 
         generateSubtitlesCount: 0,
         bulkGenerateCount: 0,
         currentPeriodStart: now,
+        currentPeriodEnd: null,
         updatedAt: now,
       })
       .returning();
@@ -86,6 +112,7 @@ export async function ensureUserSynced(userId: string): Promise<AppUser | null> 
         generateSubtitlesCount: 0,
         bulkGenerateCount: 0,
         currentPeriodStart: now,
+        currentPeriodEnd: null,
         accessLevel,
         updatedAt: now,
       })
@@ -106,6 +133,77 @@ export async function ensureUserSynced(userId: string): Promise<AppUser | null> 
     .where(eq(users.userId, userId))
     .limit(1);
   return fresh ?? row;
+}
+
+/**
+ * Upsert usage row for a new billing window: zero counts + period from Whop renewal fields.
+ */
+export async function resetUsageForNewPeriod(
+  userId: string,
+  accessLevel: AccessLevel,
+  periodStart: Date,
+  periodEnd: Date | null
+): Promise<void> {
+  const now = new Date();
+  await db
+    .insert(users)
+    .values({
+      userId,
+      accessLevel,
+      generateSubtitlesCount: 0,
+      bulkGenerateCount: 0,
+      currentPeriodStart: periodStart,
+      currentPeriodEnd: periodEnd,
+      updatedAt: now,
+    })
+    .onConflictDoUpdate({
+      target: users.userId,
+      set: {
+        accessLevel,
+        generateSubtitlesCount: 0,
+        bulkGenerateCount: 0,
+        currentPeriodStart: periodStart,
+        currentPeriodEnd: periodEnd,
+        updatedAt: now,
+      },
+    });
+}
+
+/** After membership ends or tier changes: match DB to current Whop access (no usage reset). */
+export async function syncUserRowFromWhopAccess(userId: string): Promise<void> {
+  const accessLevel = await resolveAccessFromWhop(userId);
+  if (!accessLevel) {
+    await db.delete(users).where(eq(users.userId, userId));
+    return;
+  }
+
+  const existing = await db
+    .select()
+    .from(users)
+    .where(eq(users.userId, userId))
+    .limit(1);
+
+  const now = new Date();
+  if (existing.length === 0) {
+    await db.insert(users).values({
+      userId,
+      accessLevel,
+      generateSubtitlesCount: 0,
+      bulkGenerateCount: 0,
+      currentPeriodStart: now,
+      currentPeriodEnd: null,
+      updatedAt: now,
+    });
+    return;
+  }
+
+  await db
+    .update(users)
+    .set({
+      accessLevel,
+      updatedAt: now,
+    })
+    .where(eq(users.userId, userId));
 }
 
 export async function canUpload(
@@ -193,7 +291,10 @@ export async function getUserUsageDisplay(
 
   const level = row.accessLevel as AccessLevel;
   const periodStart = new Date(row.currentPeriodStart);
-  const resetsAt = new Date(periodStart.getTime() + USAGE_PERIOD_MS);
+  const resetsAt =
+    row.currentPeriodEnd != null
+      ? new Date(row.currentPeriodEnd)
+      : new Date(periodStart.getTime() + USAGE_PERIOD_MS);
 
   return {
     accessLevel: level,

@@ -69,10 +69,12 @@ export const users = pgTable('users', {
     .$type<'basic' | 'premium'>(),
   generateSubtitlesCount: integer('generate_subtitles_count').notNull().default(0),
   bulkGenerateCount: integer('bulk_generate_count').notNull().default(0),
-  /** Start of current billing period; counts reset every ~30 days. */
+  /** Start of current billing period (from Whop `renewal_period_start` when webhooks run). */
   currentPeriodStart: timestamp('current_period_start', {
     withTimezone: true,
   }).notNull(),
+  /** End of current billing period from Whop (`renewal_period_end`); null until webhook or inferred. */
+  currentPeriodEnd: timestamp('current_period_end', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
