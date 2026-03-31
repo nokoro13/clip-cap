@@ -16,6 +16,7 @@ import type {
   CustomTextTrack,
   BannerSegment,
   BannerTrack,
+  SplitScreenConfig,
 } from '@/components/timeline/types';
 import { BannerOverlay } from './BannerOverlay';
 
@@ -162,6 +163,7 @@ export type VideoSegment = {
   sourceEndFrame: number;
   sourceVideoUrl: string;
   transform?: VideoTransform;
+  splitScreen?: SplitScreenConfig;
 };
 
 export type EnhancedSubtitle = Subtitle & {
@@ -187,6 +189,8 @@ export type SubtitleCompositionProps = {
   bannerSegments?: BannerSegment[];
   /** Banner tracks (for visibility filtering) */
   bannerTracks?: BannerTrack[];
+  /** Global split-screen. When a segment defines `splitScreen`, that overrides for that segment. */
+  splitScreenConfig?: SplitScreenConfig | null;
 };
 
 // ============ POSITION HELPER ============
@@ -835,6 +839,146 @@ const GoogleFontLoader: React.FC<{
   return <>{children}</>;
 };
 
+// ============ VIDEO VIEWPORT HELPERS (split + full canvas) ============
+
+const COMPOSITION_WIDTH = 1080;
+const COMPOSITION_HEIGHT = 1920;
+
+function getCoverDimensions(
+  compositionWidth: number,
+  compositionHeight: number,
+  videoAspectRatio: number
+) {
+  const coverWidth =
+    compositionHeight * videoAspectRatio > compositionWidth
+      ? compositionHeight * videoAspectRatio
+      : compositionWidth;
+  const coverHeight =
+    compositionHeight * videoAspectRatio > compositionWidth
+      ? compositionHeight
+      : compositionWidth / videoAspectRatio;
+  return { coverWidth, coverHeight };
+}
+
+function hasCustomVideoTransform(
+  t: VideoTransform | undefined
+): t is VideoTransform {
+  return Boolean(
+    t && (t.scale !== 1 || t.offsetX !== 0 || t.offsetY !== 0)
+  );
+}
+
+function getVideoWrapperStyleForViewport(
+  t: VideoTransform,
+  compositionWidth: number,
+  compositionHeight: number,
+  videoAspectRatio: number
+): React.CSSProperties {
+  const { coverWidth, coverHeight } = getCoverDimensions(
+    compositionWidth,
+    compositionHeight,
+    videoAspectRatio
+  );
+  return {
+    position: 'absolute',
+    left: '50%',
+    top: '50%',
+    width: coverWidth * t.scale,
+    height: coverHeight * t.scale,
+    transform: `translate(calc(-50% + ${t.offsetX}px), calc(-50% + ${t.offsetY}px))`,
+  };
+}
+
+function resolveEffectiveSplit(
+  segment: VideoSegment | undefined,
+  globalSplit: SplitScreenConfig | null | undefined
+): SplitScreenConfig | null {
+  if (segment?.splitScreen?.enabled) {
+    return segment.splitScreen;
+  }
+  if (globalSplit?.enabled) {
+    return globalSplit;
+  }
+  return null;
+}
+
+/** Renders two stacked halves (each full width × half height, e.g. 1080×960). */
+function SplitScreenVideoHalves({
+  src,
+  videoStartFrame,
+  trimBefore,
+  trimAfter,
+  useTrim,
+  topTransform,
+  bottomTransform,
+  videoAspectRatio,
+  isPortrait,
+}: {
+  src: string;
+  videoStartFrame: number;
+  trimBefore: number;
+  trimAfter: number;
+  useTrim: boolean;
+  topTransform: VideoTransform;
+  bottomTransform: VideoTransform;
+  videoAspectRatio: number;
+  isPortrait: boolean;
+}) {
+  const halfH = COMPOSITION_HEIGHT / 2;
+  const renderHalf = (topPx: number, t: VideoTransform) => {
+    const segHasTransform = hasCustomVideoTransform(t);
+    const wrapperStyle = segHasTransform
+      ? getVideoWrapperStyleForViewport(
+          t,
+          COMPOSITION_WIDTH,
+          halfH,
+          videoAspectRatio
+        )
+      : null;
+    const segVideoStyle: React.CSSProperties =
+      isPortrait || segHasTransform
+        ? { width: '100%', height: '100%', objectFit: 'cover' }
+        : { width: '100%', height: '100%', objectFit: 'contain' };
+    const videoEl = useTrim ? (
+      <OffthreadVideo
+        src={src}
+        trimBefore={trimBefore}
+        trimAfter={trimAfter}
+        style={segVideoStyle}
+        pauseWhenBuffering
+      />
+    ) : (
+      <OffthreadVideo
+        src={src}
+        startFrom={videoStartFrame}
+        style={segVideoStyle}
+        pauseWhenBuffering
+      />
+    );
+    return (
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: topPx,
+          width: COMPOSITION_WIDTH,
+          height: halfH,
+          overflow: 'hidden',
+          backgroundColor: '#000',
+        }}
+      >
+        {wrapperStyle ? <div style={wrapperStyle}>{videoEl}</div> : videoEl}
+      </div>
+    );
+  };
+  return (
+    <>
+      {renderHalf(0, topTransform)}
+      {renderHalf(halfH, bottomTransform)}
+    </>
+  );
+}
+
 // ============ MAIN COMPOSITION ============
 
 export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
@@ -851,19 +995,13 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
   customTextTracks = [],
   bannerSegments = [],
   bannerTracks = [],
+  splitScreenConfig = null,
 }) => {
   const { fps } = useVideoConfig();
   const videoStartFrame = Math.round((videoStartFrom / 1000) * fps);
 
   const isPortrait = videoAspectRatio < 0.7;
 
-  const hasCustomTransform = (t: VideoTransform | undefined) =>
-    t &&
-    (t.scale !== 1 || t.offsetX !== 0 || t.offsetY !== 0);
-
-  // Cover math: 16:9 -> fill height; 9:16 -> fill width. Output canvas is always 9:16.
-  const COMPOSITION_WIDTH = 1080;
-  const COMPOSITION_HEIGHT = 1920;
   const coverWidth =
     COMPOSITION_HEIGHT * videoAspectRatio > COMPOSITION_WIDTH
       ? COMPOSITION_HEIGHT * videoAspectRatio
@@ -873,8 +1011,8 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
       ? COMPOSITION_HEIGHT
       : COMPOSITION_WIDTH / videoAspectRatio;
 
-  const getVideoWrapperStyle = (t: VideoTransform) =>
-    hasCustomTransform(t)
+  const getVideoWrapperStyleFull = (t: VideoTransform) =>
+    hasCustomVideoTransform(t)
       ? {
           position: 'absolute' as const,
           left: '50%',
@@ -886,10 +1024,10 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
       : null;
 
   // For single-video mode (no segments): use global videoTransform
-  const globalHasTransform = hasCustomTransform(videoTransform);
+  const globalHasTransform = hasCustomVideoTransform(videoTransform);
   const globalVideoWrapperStyle =
     globalHasTransform && videoTransform
-      ? getVideoWrapperStyle(videoTransform)
+      ? getVideoWrapperStyleFull(videoTransform)
       : null;
 
   const videoStyle: React.CSSProperties =
@@ -918,6 +1056,8 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
       visibleBannerTrackIds.has(s.trackId) && s.endFrame > s.startFrame
   );
 
+  const globalSplitOn = Boolean(splitScreenConfig?.enabled);
+
   return (
     <GoogleFontLoader style={style}>
       <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
@@ -929,11 +1069,37 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
             if (durationFrames <= 0) {
               return null;
             }
+            const effectiveSplit = resolveEffectiveSplit(segment, splitScreenConfig);
+            const useSplit = effectiveSplit != null;
+
+            if (useSplit && effectiveSplit) {
+              return (
+                <Sequence
+                  key={segment.id}
+                  from={segment.startFrame}
+                  durationInFrames={durationFrames}
+                  premountFor={Math.min(2 * fps, durationFrames)}
+                >
+                  <SplitScreenVideoHalves
+                    src={segment.sourceVideoUrl}
+                    videoStartFrame={videoStartFrame}
+                    trimBefore={segment.sourceStartFrame}
+                    trimAfter={segment.sourceEndFrame}
+                    useTrim
+                    topTransform={effectiveSplit.topTransform}
+                    bottomTransform={effectiveSplit.bottomTransform}
+                    videoAspectRatio={videoAspectRatio}
+                    isPortrait={isPortrait}
+                  />
+                </Sequence>
+              );
+            }
+
             const segTransform = segment.transform ?? videoTransform;
-            const segHasTransform = hasCustomTransform(segTransform);
+            const segHasTransform = hasCustomVideoTransform(segTransform);
             const segWrapperStyle =
               segHasTransform && segTransform
-                ? getVideoWrapperStyle(segTransform)
+                ? getVideoWrapperStyleFull(segTransform)
                 : null;
             const segVideoStyle: React.CSSProperties =
               isPortrait || segHasTransform
@@ -970,6 +1136,18 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
               </Sequence>
             );
           })
+        ) : videoUrl && globalSplitOn && splitScreenConfig ? (
+          <SplitScreenVideoHalves
+            src={videoUrl}
+            videoStartFrame={videoStartFrame}
+            trimBefore={0}
+            trimAfter={0}
+            useTrim={false}
+            topTransform={splitScreenConfig.topTransform}
+            bottomTransform={splitScreenConfig.bottomTransform}
+            videoAspectRatio={videoAspectRatio}
+            isPortrait={isPortrait}
+          />
         ) : videoUrl ? (
           globalHasTransform && globalVideoWrapperStyle ? (
             <div style={globalVideoWrapperStyle}>

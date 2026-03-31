@@ -71,6 +71,8 @@ import type {
   BannerTrack,
   BannerSegment,
   BannerStyle,
+  SplitScreenConfig,
+  VideoTransform,
 } from "@/components/timeline/types";
 import {
   createInitialVideoSegment,
@@ -134,6 +136,65 @@ function mergeEditorStateIntoProjectSnapshot(
     project.customTextSegments = es.customTextSegments;
   if (es.bannerTracks !== undefined) project.bannerTracks = es.bannerTracks;
   if (es.bannerSegments !== undefined) project.bannerSegments = es.bannerSegments;
+  if (es.splitScreenConfig !== undefined)
+    project.splitScreenConfig = es.splitScreenConfig;
+}
+
+const IDENTITY_VIDEO_TRANSFORM = { scale: 1, offsetX: 0, offsetY: 0 };
+
+const DEFAULT_SPLIT_SCREEN_CONFIG: SplitScreenConfig = {
+  enabled: false,
+  topTransform: { ...IDENTITY_VIDEO_TRANSFORM },
+  bottomTransform: { ...IDENTITY_VIDEO_TRANSFORM },
+};
+
+function normalizeSplitScreenConfig(raw: unknown): SplitScreenConfig {
+  const identity = () => ({ ...IDENTITY_VIDEO_TRANSFORM });
+  const base: SplitScreenConfig = {
+    enabled: false,
+    topTransform: identity(),
+    bottomTransform: identity(),
+  };
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return base;
+  const o = raw as Record<string, unknown>;
+  const enabled = Boolean(o.enabled);
+  if (
+    o.topTransform &&
+    o.bottomTransform &&
+    typeof o.topTransform === "object" &&
+    typeof o.bottomTransform === "object"
+  ) {
+    return {
+      enabled,
+      topTransform: o.topTransform as VideoTransform,
+      bottomTransform: o.bottomTransform as VideoTransform,
+    };
+  }
+  if (
+    o.leftTransform &&
+    o.rightTransform &&
+    typeof o.leftTransform === "object" &&
+    typeof o.rightTransform === "object"
+  ) {
+    return {
+      enabled,
+      topTransform: o.leftTransform as VideoTransform,
+      bottomTransform: o.rightTransform as VideoTransform,
+    };
+  }
+  return { ...base, enabled };
+}
+
+function getEffectiveSplitForCrop(
+  clip: { segmentId?: string } | null,
+  segments: VideoSegment[],
+  globalSplit: SplitScreenConfig
+): SplitScreenConfig {
+  if (clip?.segmentId) {
+    const seg = segments.find((s) => s.id === clip.segmentId);
+    if (seg?.splitScreen?.enabled) return seg.splitScreen;
+  }
+  return globalSplit;
 }
 
 const DEFAULT_CUSTOM_TEXT_STYLE: CustomTextStyle = {
@@ -1237,6 +1298,10 @@ export default function EditorPage() {
     trimEndSeconds?: number;
     segmentId?: string;
   } | null>(null);
+  const [splitScreenConfig, setSplitScreenConfig] = useState<SplitScreenConfig>(
+    DEFAULT_SPLIT_SCREEN_CONFIG
+  );
+  const [cropSplitHalf, setCropSplitHalf] = useState<"top" | "bottom">("top");
   const [customTextTracks, setCustomTextTracks] = useState<CustomTextTrack[]>([]);
   const [customTextSegments, setCustomTextSegments] = useState<CustomTextSegment[]>([]);
   const [selectedTextSegment, setSelectedTextSegment] = useState<string | null>(null);
@@ -1445,6 +1510,7 @@ export default function EditorPage() {
               [
                 "videoTransform",
                 "videoAspectRatio",
+                "splitScreenConfig",
                 "videoSegments",
                 "deletedRanges",
                 "customTextTracks",
@@ -1646,10 +1712,15 @@ export default function EditorPage() {
             if (es.customTextSegments && Array.isArray(es.customTextSegments)) setCustomTextSegments(es.customTextSegments as CustomTextSegment[]);
             if (es.bannerTracks && Array.isArray(es.bannerTracks)) setBannerTracks(es.bannerTracks as BannerTrack[]);
             if (es.bannerSegments && Array.isArray(es.bannerSegments)) setBannerSegments(es.bannerSegments as BannerSegment[]);
+            if (es.splitScreenConfig)
+              setSplitScreenConfig(normalizeSplitScreenConfig(es.splitScreenConfig));
           } else {
             // Fallback: load from flat fields (legacy / localStorage)
             if (project.videoTransform) {
               setVideoTransform(project.videoTransform);
+            }
+            if (project.splitScreenConfig) {
+              setSplitScreenConfig(normalizeSplitScreenConfig(project.splitScreenConfig));
             }
             if (
               typeof project.videoAspectRatio === "number" &&
@@ -1902,6 +1973,7 @@ export default function EditorPage() {
         maxWordsPerSegment,
         videoTransform,
         videoAspectRatio,
+        splitScreenConfig,
         videoSegments,
         deletedRanges,
         customTextTracks,
@@ -1913,6 +1985,7 @@ export default function EditorPage() {
         ...project,
         videoTransform,
         videoAspectRatio,
+        splitScreenConfig,
         videoSegments,
         deletedRanges,
         customTextTracks,
@@ -1973,6 +2046,7 @@ export default function EditorPage() {
     videoUrl,
     videoTransform,
     videoAspectRatio,
+    splitScreenConfig,
     videoSegments,
     deletedRanges,
     customTextTracks,
@@ -2502,6 +2576,7 @@ export default function EditorPage() {
           style,
           videoSegments: effectiveVideoSegments,
           videoTransform,
+          splitScreenConfig,
           customTextSegments,
           customTextTracks,
           bannerSegments,
@@ -2579,6 +2654,7 @@ export default function EditorPage() {
     style,
     videoSegments,
     videoTransform,
+    splitScreenConfig,
     customTextSegments,
     customTextTracks,
     bannerSegments,
@@ -2608,6 +2684,18 @@ export default function EditorPage() {
     },
     [compositionDuration]
   );
+
+  const handleSplitScreenToggle = useCallback(() => {
+    setSplitScreenConfig((prev) => {
+      if (prev.enabled) {
+        setVideoSegments((segs) =>
+          segs.map(({ splitScreen: _removed, ...rest }) => rest)
+        );
+        return DEFAULT_SPLIT_SCREEN_CONFIG;
+      }
+      return { ...prev, enabled: true };
+    });
+  }, []);
 
   const handleDeleteConfirm = useCallback(
     (deleteVideo: boolean, subId?: string | null) => {
@@ -7708,6 +7796,8 @@ export default function EditorPage() {
 				        }
 				        setShowCropDialog(true);
 				      }}
+				      onSplitScreenToggle={handleSplitScreenToggle}
+				      splitScreenEnabled={splitScreenConfig.enabled}
 				      onAddTextTrackClick={() => {
 				        setLeftPanelTab("text");
 				        setMobilePanelTab("text");
@@ -7788,6 +7878,8 @@ export default function EditorPage() {
                 highlightColor,
                 videoTransform,
                 videoAspectRatio,
+                splitScreenConfig:
+                  splitScreenConfig.enabled ? splitScreenConfig : null,
                 customTextSegments,
                 customTextTracks,
                 bannerSegments,
@@ -7830,18 +7922,65 @@ export default function EditorPage() {
             open={showCropDialog}
             onOpenChange={(open) => {
               setShowCropDialog(open);
+              if (open) setCropSplitHalf("top");
               if (!open) setCropDialogClip(null);
             }}
             videoUrl={cropDialogClip?.url ?? videoUrl}
-            currentTransform={
-              cropDialogClip?.segmentId
+            currentTransform={(() => {
+              const effSplit = getEffectiveSplitForCrop(
+                cropDialogClip,
+                videoSegments,
+                splitScreenConfig
+              );
+              if (effSplit.enabled) {
+                return cropSplitHalf === "top"
+                  ? effSplit.topTransform
+                  : effSplit.bottomTransform;
+              }
+              return cropDialogClip?.segmentId
                 ? (videoSegments.find(
                     (s) => s.id === cropDialogClip.segmentId
                   )?.transform ?? videoTransform)
-                : videoTransform
-            }
+                : videoTransform;
+            })()}
             onApply={(transform) => {
-              if (cropDialogClip?.segmentId) {
+              const effSplit = getEffectiveSplitForCrop(
+                cropDialogClip,
+                videoSegments,
+                splitScreenConfig
+              );
+              if (effSplit.enabled) {
+                const top =
+                  cropSplitHalf === "top"
+                    ? transform
+                    : effSplit.topTransform;
+                const bottom =
+                  cropSplitHalf === "bottom"
+                    ? transform
+                    : effSplit.bottomTransform;
+                if (cropDialogClip?.segmentId) {
+                  setVideoSegments((prev) =>
+                    prev.map((s) =>
+                      s.id === cropDialogClip.segmentId
+                        ? {
+                            ...s,
+                            splitScreen: {
+                              enabled: true,
+                              topTransform: { ...top },
+                              bottomTransform: { ...bottom },
+                            },
+                          }
+                        : s
+                    )
+                  );
+                } else {
+                  setSplitScreenConfig({
+                    enabled: true,
+                    topTransform: { ...top },
+                    bottomTransform: { ...bottom },
+                  });
+                }
+              } else if (cropDialogClip?.segmentId) {
                 setVideoSegments((prev) =>
                   prev.map((s) =>
                     s.id === cropDialogClip.segmentId
@@ -7854,13 +7993,28 @@ export default function EditorPage() {
               }
             }}
             compositionWidth={1080}
-            compositionHeight={1920}
+            compositionHeight={
+              getEffectiveSplitForCrop(
+                cropDialogClip,
+                videoSegments,
+                splitScreenConfig
+              ).enabled
+                ? 960
+                : 1920
+            }
             initialVideoAspectRatio={videoAspectRatio}
             onVideoDimensionsLoaded={(w, h) =>
               setVideoAspectRatio(h > 0 ? w / h : 16 / 9)
             }
             trimStartSeconds={cropDialogClip?.trimStartSeconds ?? 0}
             trimEndSeconds={cropDialogClip?.trimEndSeconds}
+            splitMode={getEffectiveSplitForCrop(
+              cropDialogClip,
+              videoSegments,
+              splitScreenConfig
+            ).enabled}
+            activeSplitHalf={cropSplitHalf}
+            onActiveSplitHalfChange={setCropSplitHalf}
           />
 			 <div className="hidden sm:flex sm:w-full">
           <Timeline
@@ -7920,6 +8074,8 @@ export default function EditorPage() {
               }
               setShowCropDialog(true);
             }}
+            onSplitScreenToggle={handleSplitScreenToggle}
+            splitScreenEnabled={splitScreenConfig.enabled}
             onAddTextTrackClick={() => {
               setLeftPanelCollapsed(false);
               setLeftPanelTab("text");

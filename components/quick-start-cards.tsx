@@ -523,7 +523,7 @@ export function QuickStartCards({
 			<span className="w-max-w mt-0">{props.footer}</span>
 		</div>
       <div className="flex flex-col">
-        <h3 className="text-5 font-semibold text-foreground">{props.title}</h3>
+        <h3 className="text-5 font-medium text-foreground">{props.title}</h3>
         <p className="text-muted-foreground">{props.subtitle}</p>
       {/* <span className="w-max-w mt-0">{props.footer}</span> */}
       </div>
@@ -576,11 +576,11 @@ export function QuickStartCards({
               {cardContent({
                 icon: (
                   <div className="flex items-center justify-center">
-                    <Layers className="size-8 text-muted-foreground" />
+                    <Layers className="size-10 text-muted-foreground" />
                   </div>
                 ),
                 title: 'Bulk Generate',
-                subtitle: 'Process multiple videos or YouTube links',
+                subtitle: 'Long Form into Short Form',
                 lockedPremium: accessLevel === 'basic' && hasAccess,
                 footer:
                   usageStats && hasAccess && accessLevel === 'premium' ? (

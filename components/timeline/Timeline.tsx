@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ChevronUp, ChevronDown, Trash2, ScissorsLineDashed, Type, Crop, Play, Pause, Award } from "lucide-react";
+import { ChevronUp, ChevronDown, Trash2, ScissorsLineDashed, Type, Crop, Play, Pause, Award, SquareSplitHorizontal } from "lucide-react";
 import { TimelineRuler } from "./TimelineRuler";
 import { VideoTrack } from "./VideoTrack";
 import { SubtitleTrack } from "./SubtitleTrack";
@@ -61,6 +61,8 @@ export const Timeline: React.FC<TimelineProps> = ({
   onDeleteTextSegment,
   onDeleteBannerSegment,
   onCropClick,
+  onSplitScreenToggle,
+  splitScreenEnabled = false,
   onAddTextTrackClick,
   onAddBannerClick,
   setRawSegmentSubtitles,
@@ -820,6 +822,22 @@ export const Timeline: React.FC<TimelineProps> = ({
               }
             >
               <Crop size="6" />
+            </Button>
+          )}
+
+          {onSplitScreenToggle && (
+            <Button
+              variant={splitScreenEnabled ? "secondary" : "ghost"}
+              size="sm"
+              onClick={onSplitScreenToggle}
+              disabled={!videoUrl}
+              title={
+                splitScreenEnabled
+                  ? "Turn off split screen"
+                  : "Split screen: top and bottom crops"
+              }
+            >
+              <SquareSplitHorizontal size="6" />
             </Button>
           )}
         </div>

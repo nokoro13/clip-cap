@@ -8,6 +8,13 @@ export interface VideoTransform {
   offsetY: number;
 }
 
+/** Stacked split: same source twice with independent crops for top and bottom halves of the 9:16 canvas. */
+export interface SplitScreenConfig {
+  enabled: boolean;
+  topTransform: VideoTransform;
+  bottomTransform: VideoTransform;
+}
+
 /** Video segment - represents a portion of the source video on the timeline */
 export interface VideoSegment {
   id: string;
@@ -18,6 +25,8 @@ export interface VideoSegment {
   sourceVideoUrl: string; // Original video URL
   /** Per-segment crop/pan/zoom. When set, overrides global videoTransform for this segment. */
   transform?: VideoTransform;
+  /** When set, overrides global split-screen for this segment only. */
+  splitScreen?: SplitScreenConfig;
 }
 
 /** Style for custom text overlay segments */
@@ -178,6 +187,10 @@ export interface TimelineProps {
   onDeleteBannerSegment?: (segmentId: string) => void;
   /** Callback when user wants to open crop dialog */
   onCropClick?: () => void;
+  /** Callback when user toggles split-screen (duplicated video, two crops). */
+  onSplitScreenToggle?: () => void;
+  /** Whether split-screen layout is active (global; segments may override). */
+  splitScreenEnabled?: boolean;
   /** Callback when user clicks Add text track (e.g. to expand timeline and switch sidebar to text tab) */
   onAddTextTrackClick?: () => void;
   /** Callback when user clicks Add banner track (e.g. to expand timeline and switch sidebar to banners tab) */

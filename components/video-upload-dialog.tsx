@@ -151,7 +151,7 @@ export function VideoUploadDialog({
                 </p>
                 <p className="mt-2 text-sm text-muted-foreground">
                   {subscriptionGate.intent === 'upgrade_to_premium'
-                    ? 'Bulk Generate is included with Premium. Upgrade to process multiple videos and YouTube links.'
+                    ? 'Bulk Generate is included with Premium.'
                     : 'Choose a plan to bulk process videos and get viral clips.'}
                 </p>
                 <SubscribeDialog

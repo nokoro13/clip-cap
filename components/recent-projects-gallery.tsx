@@ -228,16 +228,15 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
                     <Progress value={entry.progress} className="mt-2 h-1.5" />
                   )}
                 </CardContent>
-                <CardFooter className="flex-col gap-2 pb-4 px-4">
+                <CardFooter className="flex-row gap-2 pb-4 px-4">
                   {isProcessing || isError ? (
                     <Button variant="outline" size="sm" className="w-full" disabled>
                       {isProcessing ? 'Processing...' : 'Failed'}
                     </Button>
                   ) : (
-                    <Button variant="outline" size="sm" className="w-full" asChild>
+                    <Button variant="outline" size="sm" className="max-w-max" asChild>
                       <Link href={href}>
-                        <ExternalLink className="mr-1.5 size-3.5" />
-                        Open
+                        <ExternalLink className="size-3.5" />
                       </Link>
                     </Button>
                   )}
@@ -246,15 +245,15 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
                       <Button
                         variant="ghost"
                         size="sm"
-                        className="w-full text-destructive hover:text-destructive hover:bg-destructive/10"
+                        className="max-w-max text-destructive hover:text-destructive hover:bg-destructive/10"
                         disabled={deletingId === entry.id}
                       >
                         {deletingId === entry.id ? (
-                          <Loader2 className="mr-1.5 size-3.5 animate-spin" />
+                          <Loader2 className="size-3.5 animate-spin" />
                         ) : (
-                          <Trash2 className="mr-1.5 size-3.5" />
+                          <Trash2 className="size-3.5" />
                         )}
-                        Delete
+                        
                       </Button>
                     </AlertDialogTrigger>
                     <AlertDialogContent>

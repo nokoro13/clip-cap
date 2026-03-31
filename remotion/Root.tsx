@@ -60,6 +60,7 @@ export const RemotionRoot: React.FC = () => {
           style: DEFAULT_SUBTITLE_STYLE,
           videoSegments: [],
           videoTransform: { scale: 1, offsetX: 0, offsetY: 0 },
+          splitScreenConfig: null,
           customTextSegments: [],
           customTextTracks: [],
           bannerSegments: [],

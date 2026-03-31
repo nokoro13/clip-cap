@@ -54,6 +54,10 @@ type VideoCropDialogProps = {
   /** Trim the video to this range (seconds). When set, the crop dialog shows and loops this clip. */
   trimStartSeconds?: number;
   trimEndSeconds?: number;
+  /** Split-screen: edit one stacked half. Parent should pass composition matching that half (e.g. 1080×960). */
+  splitMode?: boolean;
+  activeSplitHalf?: "top" | "bottom";
+  onActiveSplitHalfChange?: (half: "top" | "bottom") => void;
 };
 
 function transformToFramePosition(
@@ -125,12 +129,19 @@ export function VideoCropDialog({
   onVideoDimensionsLoaded,
   trimStartSeconds = 0,
   trimEndSeconds,
+  splitMode = false,
+  activeSplitHalf = "top",
+  onActiveSplitHalfChange,
 }: VideoCropDialogProps) {
   const [videoAspectRatio, setVideoAspectRatio] = useState<number | null>(null);
   const effectiveAspect =
     initialVideoAspectRatio ?? videoAspectRatio ?? VIDEO_ASPECT_LANDSCAPE;
   const isPortrait = effectiveAspect < PORTRAIT_THRESHOLD;
   const minScale = MIN_SCALE;
+  /** Width of crop frame as % of 16:9 preview width when frame height = 100% of preview. */
+  const landscapeCropFrameWidthPercent =
+    (compositionWidth / compositionHeight) * (9 / 16) * 100;
+  const outputFrameAspect = compositionWidth / compositionHeight;
 
   // For 16:9 in 9:16, the editor shows "contain" (letterbox) when transform is identity (1,0,0).
   // The dialog uses cover math, so scale=1 would show zoomed. Use contain scale so preview matches editor.
@@ -213,24 +224,24 @@ export function VideoCropDialog({
             );
       setScale(s);
       if (!isPortrait) {
-        const [minX, maxX] = landscapeFrameXBounds(s);
+        const [minX, maxX] = landscapeFrameXBounds(s, landscapeCropFrameWidthPercent);
         setFrameXPercent(Math.max(minX, Math.min(maxX, x)));
       } else {
         setFrameXPercent(x);
       }
       setFrameYPercent(y);
     }
-  }, [open, currentTransform, compositionWidth, compositionHeight, effectiveAspect, isPortrait, minScale]);
+  }, [open, currentTransform, compositionWidth, compositionHeight, effectiveAspect, isPortrait, minScale, landscapeCropFrameWidthPercent]);
 
-  // When scale changes in landscape mode, clamp frame X so the 9:16 frame stays within the video
+  // When scale changes in landscape mode, clamp frame X so the crop frame stays within the video
   useEffect(() => {
     if (open && !isPortrait) {
       setFrameXPercent((prev) => {
-        const [minX, maxX] = landscapeFrameXBounds(scale);
+        const [minX, maxX] = landscapeFrameXBounds(scale, landscapeCropFrameWidthPercent);
         return Math.max(minX, Math.min(maxX, prev));
       });
     }
-  }, [scale, open, isPortrait]);
+  }, [scale, open, isPortrait, landscapeCropFrameWidthPercent]);
 
   const handleZoomIn = useCallback(() => {
     setScale((s) => Math.min(MAX_SCALE, s + SCALE_STEP));
@@ -269,7 +280,7 @@ export function VideoCropDialog({
       const start = dragStartRef.current;
       if (!start || !containerRef.current) return;
       const rect = containerRef.current.getBoundingClientRect();
-      const frameWidth = rect.height * (9 / 16);
+      const frameWidth = rect.height * outputFrameAspect;
       const panRange = rect.width - frameWidth;
       if (panRange <= 0) return;
       const dx = (e.clientX - start.x) / panRange;
@@ -277,7 +288,7 @@ export function VideoCropDialog({
       let newX = start.frameX + dx;
       let newY = Math.max(0, Math.min(1, start.frameY + dy));
       if (!isPortrait) {
-        const [minX, maxX] = landscapeFrameXBounds(scale);
+        const [minX, maxX] = landscapeFrameXBounds(scale, landscapeCropFrameWidthPercent);
         newX = Math.max(minX, Math.min(maxX, newX));
       } else {
         newX = Math.max(0, Math.min(1, newX));
@@ -285,7 +296,7 @@ export function VideoCropDialog({
       setFrameXPercent(newX);
       setFrameYPercent(newY);
     },
-    [isPortrait, scale]
+    [isPortrait, scale, outputFrameAspect, landscapeCropFrameWidthPercent]
   );
 
   const handleMouseUp = useCallback(() => {
@@ -328,10 +339,36 @@ export function VideoCropDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-[640px]">
         <DialogHeader>
-          <DialogTitle>Adjust Video Position</DialogTitle>
+          <DialogTitle>
+            {splitMode
+              ? `Adjust Video — ${activeSplitHalf === "top" ? "Top" : "Bottom"} half`
+              : "Adjust Video Position"}
+          </DialogTitle>
         </DialogHeader>
 
         <div className="space-y-4">
+          {splitMode && onActiveSplitHalfChange ? (
+            <div className="flex gap-2">
+              <Button
+                type="button"
+                variant={activeSplitHalf === "top" ? "default" : "outline"}
+                size="sm"
+                className="flex-1"
+                onClick={() => onActiveSplitHalfChange("top")}
+              >
+                Top half
+              </Button>
+              <Button
+                type="button"
+                variant={activeSplitHalf === "bottom" ? "default" : "outline"}
+                size="sm"
+                className="flex-1"
+                onClick={() => onActiveSplitHalfChange("bottom")}
+              >
+                Bottom half
+              </Button>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between gap-2 text-sm text-muted-foreground">
             <span className="flex items-center gap-2">
               <Crop className="size-4" />
@@ -417,10 +454,10 @@ export function VideoCropDialog({
                       style={{
                         background: `linear-gradient(to right, 
                           rgba(0,0,0,0.5) 0%, 
-                          rgba(0,0,0,0.5) ${frameXPercent * (100 - FRAME_WIDTH_PERCENT)}%, 
-                          transparent ${frameXPercent * (100 - FRAME_WIDTH_PERCENT)}%, 
-                          transparent ${frameXPercent * (100 - FRAME_WIDTH_PERCENT) + FRAME_WIDTH_PERCENT}%, 
-                          rgba(0,0,0,0.5) ${frameXPercent * (100 - FRAME_WIDTH_PERCENT) + FRAME_WIDTH_PERCENT}%, 
+                          rgba(0,0,0,0.5) ${frameXPercent * (100 - landscapeCropFrameWidthPercent)}%, 
+                          transparent ${frameXPercent * (100 - landscapeCropFrameWidthPercent)}%, 
+                          transparent ${frameXPercent * (100 - landscapeCropFrameWidthPercent) + landscapeCropFrameWidthPercent}%, 
+                          rgba(0,0,0,0.5) ${frameXPercent * (100 - landscapeCropFrameWidthPercent) + landscapeCropFrameWidthPercent}%, 
                           rgba(0,0,0,0.5) 100%)`,
                       }}
                     />
@@ -432,9 +469,9 @@ export function VideoCropDialog({
                         "flex flex-col overflow-hidden"
                       )}
                       style={{
-                        aspectRatio: `${9} / ${16}`,
+                        aspectRatio: `${compositionWidth} / ${compositionHeight}`,
                         height: "100%",
-                        left: `${frameXPercent * (100 - FRAME_WIDTH_PERCENT)}%`,
+                        left: `${frameXPercent * (100 - landscapeCropFrameWidthPercent)}%`,
                         top: "50%",
                         transform: "translateY(-50%)",
                       }}

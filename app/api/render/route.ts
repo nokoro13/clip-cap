@@ -33,6 +33,7 @@ export async function POST(request: Request) {
       style,
       videoSegments,
       videoTransform,
+      splitScreenConfig,
       customTextSegments,
       customTextTracks,
       bannerSegments,
@@ -94,6 +95,10 @@ export async function POST(request: Request) {
         style: style ?? {},
         videoSegments: videoSegments ?? [],
         videoTransform: videoTransform ?? { scale: 1, offsetX: 0, offsetY: 0 },
+        splitScreenConfig:
+          splitScreenConfig !== undefined && splitScreenConfig !== null
+            ? splitScreenConfig
+            : null,
         customTextSegments: customTextSegments ?? [],
         customTextTracks: customTextTracks ?? [],
         bannerSegments: bannerSegments ?? [],
