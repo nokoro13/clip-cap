@@ -3,6 +3,8 @@ import { whopsdk } from "@/lib/whop-sdk";
 import { QuickStartCards } from "@/components/quick-start-cards";
 import { RecentProjectsGallery } from "@/components/recent-projects-gallery";
 import { getUserUsageDisplay } from "@/lib/user-service";
+import { Captions, Layers } from "lucide-react";
+import { Badge } from "@whop/react/components";
 
 export default async function ExperiencePage({
 	params,
@@ -52,36 +54,61 @@ export default async function ExperiencePage({
 
 	return (
 		<div className="flex flex-col p-8 gap-6">
+			<div className="flex justify-between items-start sm:items-center">
 			<div className="flex justify-between items-center gap-4">
-				<h1 className="text-9">
+				<h1 className="text-9 leading-none">
 					Hi <strong>{displayName}</strong>!
 					Welcome to <strong>{experience.name}</strong>.
 				</h1>
 			</div>
 
 			{productAccess.has_access ? (
-				<p className="text-3 text-green-10">
-					You have <strong>{accessLevel === "premium" ? "Premium" : "Basic"}</strong>{" "}
-					access.
-					{usageStats ? (
+				<p className="text-3 text-green-10 flex flex-wrap items-center gap-x-3 gap-y-1">
+					{/* {usageStats ? (
 						<>
-							{" "}
-							Subtitles: {usageStats.generateSubtitles.used}/
-							{usageStats.generateSubtitles.limit} this month
-							{accessLevel === "premium"
-								? ` · Bulk: ${usageStats.bulkGenerate.used}/${usageStats.bulkGenerate.limit}`
-								: ""}
-							.
+							<Badge
+								variant="soft" color="gray" size="2"
+								data-usage="subtitles"
+							>
+								<Captions
+									size={16}
+									className="shrink-0"
+									aria-hidden
+								/>
+								<span className="tabular-nums text-[16px]">
+									{usageStats.generateSubtitles.used}/
+									{usageStats.generateSubtitles.limit}
+								</span>
+							</Badge>
+							{accessLevel === "premium" ? (
+								<>
+									<Badge
+										variant="soft" color="gray" size="2"
+										data-usage="bulk"
+									>
+										<Layers
+											size={16}
+											className="shrink-0"
+											aria-hidden
+										/>
+										<span className="tabular-nums text-[16px]">
+											{usageStats.bulkGenerate.used}/
+											{usageStats.bulkGenerate.limit}
+										</span>
+									</Badge>
+								</>
+							) : null}
 						</>
-					) : null}
+					) : null} */}
 				</p>
 			) : (
 				<p className="text-3 text-red-10">You do not have access to the premium features.</p>
 			)}
+			</div>
 			<p className="text-3 text-gray-10">
 				Upload a video to generate AI-powered subtitles, or bulk process multiple videos at once.
 			</p>
-
+			
 			<QuickStartCards
 				hasAccess={productAccess.has_access}
 				accessLevel={accessLevel}

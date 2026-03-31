@@ -509,20 +509,23 @@ export function QuickStartCards({
   }) => (
     <div
       className={cn(
-        'relative flex h-full cursor-pointer flex-col items-center justify-center gap-4 rounded-xl bg-muted/50 p-6 transition-all hover:bg-muted hover:shadow-md'
+        'relative flex h-full cursor-pointer flex-col rounded-xl bg-muted/50 p-4 gap-8 transition-all hover:bg-muted hover:shadow-md'
       )}
     >
       {props.lockedPremium ? (
-        <span className="absolute right-3 top-3 flex items-center gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
+        <span className="absolute right-3 top-3 flex gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
           <Lock className="size-3 shrink-0" aria-hidden />
           Premium
         </span>
       ) : null}
-      <div className="flex size-20 items-center justify-center rounded-2xl">{props.icon}</div>
-      <div className="text-center">
-        <h3 className="text-base font-semibold">{props.title}</h3>
-        <p className="mt-1 text-sm text-muted-foreground">{props.subtitle}</p>
-        {props.footer}
+      <div className="flex justify-between">
+			{props.icon}
+			<span className="w-max-w mt-0">{props.footer}</span>
+		</div>
+      <div className="flex flex-col">
+        <h3 className="text-5 font-semibold text-foreground">{props.title}</h3>
+        <p className="text-muted-foreground">{props.subtitle}</p>
+      {/* <span className="w-max-w mt-0">{props.footer}</span> */}
       </div>
     </div>
   );
@@ -542,8 +545,8 @@ export function QuickStartCards({
             <button type="button" className="h-full w-full text-left">
               {cardContent({
                 icon: (
-                  <div className="flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-violet-100 to-purple-100">
-                    <Captions className="size-10 text-violet-600" />
+                  <div className="flex items-center justify-center">
+                    <Captions className="size-10 text-muted-foreground" />
                   </div>
                 ),
                 title: 'Generate Subtitles',
@@ -554,7 +557,6 @@ export function QuickStartCards({
                       label="Subtitles"
                       used={usageStats.generateSubtitles.used}
                       limit={usageStats.generateSubtitles.limit}
-                      className="mt-2"
                     />
                   ) : null,
               })}
@@ -573,8 +575,8 @@ export function QuickStartCards({
             <button type="button" className="h-full w-full text-left">
               {cardContent({
                 icon: (
-                  <div className="flex size-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-100 to-cyan-100">
-                    <Layers className="size-10 text-blue-600" />
+                  <div className="flex items-center justify-center">
+                    <Layers className="size-8 text-muted-foreground" />
                   </div>
                 ),
                 title: 'Bulk Generate',
@@ -586,7 +588,6 @@ export function QuickStartCards({
                       label="Bulk"
                       used={usageStats.bulkGenerate.used}
                       limit={usageStats.bulkGenerate.limit}
-                      className="mt-2"
                     />
                   ) : accessLevel === 'basic' && hasAccess ? (
                     <p className="mt-2 text-xs text-muted-foreground">
