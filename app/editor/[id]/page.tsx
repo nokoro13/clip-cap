@@ -73,6 +73,7 @@ import type {
   BannerStyle,
   SplitScreenConfig,
   VideoTransform,
+  DraggablePosition,
 } from "@/components/timeline/types";
 import {
   createInitialVideoSegment,
@@ -195,6 +196,69 @@ function getEffectiveSplitForCrop(
     if (seg?.splitScreen?.enabled) return seg.splitScreen;
   }
   return globalSplit;
+}
+
+/** Drop player drag pixel fields so sidebar / global layout (position, positionY, etc.) applies. */
+function stripDraggablePixelPosition<
+  T extends { left?: number; top?: number; isDragging?: boolean },
+>(item: T): T {
+  if (
+    item.left == null &&
+    item.top == null &&
+    (item.isDragging === undefined || item.isDragging === false)
+  ) {
+    return item;
+  }
+  const { left, top, isDragging, ...rest } = item;
+  return rest as T;
+}
+
+/** After `applyMaxWordsToSegments`, copy drag pixels back onto matching ids (player positions). */
+function applySubtitleDragPixelsById<T extends { id: string; left?: number; top?: number }>(
+  split: T[],
+  ...sources: T[][]
+): T[] {
+  const map = new Map<string, { left: number; top: number }>();
+  for (const source of sources) {
+    for (const s of source) {
+      if (s.left != null && s.top != null) {
+        map.set(s.id, { left: s.left, top: s.top });
+      }
+    }
+  }
+  if (map.size === 0) return split;
+  const globalPx = map.values().next().value as { left: number; top: number };
+  return split.map((s) => {
+    const p = map.get(s.id);
+    const use = p ?? globalPx;
+    return { ...s, left: use.left, top: use.top };
+  });
+}
+
+/** One drag sets the same box for all subtitles; hydrate so every line shares saved pixels. */
+function propagateSharedSubtitlePixels<T extends { id: string; left?: number; top?: number }>(
+  arr: T[]
+): T[] {
+  const sample = arr.find((s) => s.left != null && s.top != null);
+  if (!sample || sample.left == null || sample.top == null) return arr;
+  const { left, top } = sample;
+  return arr.map((s) => ({ ...s, left, top }));
+}
+
+function normalizeEditorState(raw: unknown): Record<string, unknown> | null {
+  if (raw == null) return null;
+  if (typeof raw === "string") {
+    try {
+      const p = JSON.parse(raw) as unknown;
+      if (p && typeof p === "object" && !Array.isArray(p))
+        return p as Record<string, unknown>;
+    } catch {
+      return null;
+    }
+    return null;
+  }
+  if (typeof raw === "object" && !Array.isArray(raw)) return raw as Record<string, unknown>;
+  return null;
 }
 
 const DEFAULT_CUSTOM_TEXT_STYLE: CustomTextStyle = {
@@ -1282,6 +1346,9 @@ export default function EditorPage() {
   const [rawSegmentSubtitles, setRawSegmentSubtitles] = useState<Subtitle[]>(
     []
   ); // Original segments before splitting
+  /** Latest subtitles for max-words effect to reapply drag pixels after re-split. */
+  const subtitlesDragPixelSyncRef = useRef<EnhancedSubtitle[]>([]);
+  subtitlesDragPixelSyncRef.current = subtitles;
   const [experienceId, setExperienceId] = useState<string | null>(null); // For back navigation
   const [sourceProjectId, setSourceProjectId] = useState<string | null>(null); // For navigating back to gallery when editing clips
   const [videoTransform, setVideoTransform] = useState({
@@ -1308,6 +1375,76 @@ export default function EditorPage() {
   const [bannerTracks, setBannerTracks] = useState<BannerTrack[]>([]);
   const [bannerSegments, setBannerSegments] = useState<BannerSegment[]>([]);
   const [selectedBannerSegment, setSelectedBannerSegment] = useState<string | null>(null);
+  /** Remotion player drag & drop selection (`sub:…`, `ctext:…`, `banner:…`). */
+  const [playerOverlaySelectedId, setPlayerOverlaySelectedId] = useState<string | null>(null);
+  const handleSubtitlePositionChange = useCallback(
+    (id: string, updater: (pos: DraggablePosition) => DraggablePosition) => {
+      const patch = <
+        T extends {
+          id: string;
+          left?: number;
+          top?: number;
+          isDragging?: boolean;
+        },
+      >(
+        prev: T[]
+      ): T[] => {
+        const dragged = prev.find((s) => s.id === id);
+        if (!dragged) return prev;
+        const next = updater({
+          left: dragged.left,
+          top: dragged.top,
+          isDragging: dragged.isDragging,
+        });
+        return prev.map((sub) =>
+          sub.id === id
+            ? { ...sub, ...next }
+            : {
+                ...sub,
+                left: next.left,
+                top: next.top,
+                isDragging: false,
+              }
+        );
+      };
+      setSubtitles(patch);
+      setSegmentSubtitles(patch);
+      setWordSubtitles(patch);
+    },
+    []
+  );
+  const handleCustomTextPositionChange = useCallback(
+    (id: string, updater: (pos: DraggablePosition) => DraggablePosition) => {
+      setCustomTextSegments((prev) =>
+        prev.map((seg) => {
+          if (seg.id !== id) return seg;
+          const next = updater({
+            left: seg.left,
+            top: seg.top,
+            isDragging: seg.isDragging,
+          });
+          return { ...seg, ...next };
+        })
+      );
+    },
+    []
+  );
+  const handleBannerPositionChange = useCallback(
+    (id: string, updater: (pos: DraggablePosition) => DraggablePosition) => {
+      setBannerSegments((prev) =>
+        prev.map((seg) => {
+          if (seg.id !== id) return seg;
+          const next = updater({
+            left: seg.left,
+            top: seg.top,
+            isDragging: seg.isDragging,
+          });
+          return { ...seg, ...next, left: 0 };
+        })
+      );
+    },
+    []
+  );
   const [leftPanelTab, setLeftPanelTab] = useState<"styling" | "subtitles" | "text" | "banners">("styling");
   const [mobilePanelTab, setMobilePanelTab] = useState<
     "" | "styling" | "subtitles" | "text" | "banners" | "timeline"
@@ -1357,6 +1494,21 @@ export default function EditorPage() {
       player.removeEventListener("pause", onPause);
     };
   }, [videoUrl, videoDuration]);
+
+  // Clear player drag selection on click-away (overlays call stopPropagation) or Escape.
+  useEffect(() => {
+    if (playerOverlaySelectedId == null) return;
+    const clear = () => setPlayerOverlaySelectedId(null);
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") clear();
+    };
+    window.addEventListener("pointerdown", clear);
+    window.addEventListener("keydown", onKeyDown);
+    return () => {
+      window.removeEventListener("pointerdown", clear);
+      window.removeEventListener("keydown", onKeyDown);
+    };
+  }, [playerOverlaySelectedId]);
 
   // --- Mobile tabs resizable content (max 50vh) ---
   const handleMobileTabsResizeStart = useCallback(
@@ -1640,6 +1792,17 @@ export default function EditorPage() {
       if (storedProject) {
         try {
           const project = JSON.parse(storedProject);
+          const parsedEditorState = normalizeEditorState(project.editorState);
+          /** Must match saved split or chunk ids won't align with subtitlePixelPositions. */
+          const maxWordsForInitialSplit =
+            parsedEditorState &&
+            typeof parsedEditorState.maxWordsPerSegment === "number"
+              ? parsedEditorState.maxWordsPerSegment
+              : maxWordsPerSegment;
+          const savedSubtitleMode =
+            parsedEditorState?.subtitleMode != null
+              ? (parsedEditorState.subtitleMode as SubtitleMode)
+              : null;
 
           // Load word-level captions (always available)
           let words: Subtitle[] = [];
@@ -1664,15 +1827,19 @@ export default function EditorPage() {
           if (rawSegments.length > 0) {
             // Store raw segments for re-splitting later
             setRawSegmentSubtitles(rawSegments);
-            // Apply max words limit
             const splitSegments = applyMaxWordsToSegments(
               rawSegments,
-              maxWordsPerSegment,
+              maxWordsForInitialSplit,
               FPS
             );
             setSegmentSubtitles(splitSegments);
-            setSubtitles(splitSegments);
-            setSubtitleMode("segment-highlight");
+            if (savedSubtitleMode === "word" && words.length > 0) {
+              setSubtitles(words);
+              setSubtitleMode("word");
+            } else {
+              setSubtitles(splitSegments);
+              setSubtitleMode("segment-highlight");
+            }
           } else if (words.length > 0) {
             // Fallback to word mode if no segments
             setSubtitles(words);
@@ -1698,8 +1865,8 @@ export default function EditorPage() {
           }
 
           // Load editor state from API (takes precedence over flat fields)
-          if (project.editorState) {
-            const es = project.editorState as Record<string, unknown>;
+          if (parsedEditorState) {
+            const es = parsedEditorState;
             if (es.subtitleStyle) setStyle(es.subtitleStyle as SubtitleStyle);
             if (es.subtitleMode) setSubtitleMode(es.subtitleMode as SubtitleMode);
             if (es.highlightColor) setHighlightColor(String(es.highlightColor));
@@ -1714,6 +1881,30 @@ export default function EditorPage() {
             if (es.bannerSegments && Array.isArray(es.bannerSegments)) setBannerSegments(es.bannerSegments as BannerSegment[]);
             if (es.splitScreenConfig)
               setSplitScreenConfig(normalizeSplitScreenConfig(es.splitScreenConfig));
+            if (es.subtitlePixelPositions && Array.isArray(es.subtitlePixelPositions)) {
+              const positions = es.subtitlePixelPositions as {
+                id: string;
+                left: number;
+                top: number;
+              }[];
+              const posById = new Map(
+                positions.map((p) => [p.id, p] as const)
+              );
+              const mergePixels = <T extends { id: string }>(arr: T[]) =>
+                arr.map((s) => {
+                  const p = posById.get(s.id);
+                  return p ? { ...s, left: p.left, top: p.top } : s;
+                });
+              setSubtitles((prev) =>
+                propagateSharedSubtitlePixels(mergePixels(prev))
+              );
+              setSegmentSubtitles((prev) =>
+                propagateSharedSubtitlePixels(mergePixels(prev))
+              );
+              setWordSubtitles((prev) =>
+                propagateSharedSubtitlePixels(mergePixels(prev))
+              );
+            }
           } else {
             // Fallback: load from flat fields (legacy / localStorage)
             if (project.videoTransform) {
@@ -1977,9 +2168,13 @@ export default function EditorPage() {
         videoSegments,
         deletedRanges,
         customTextTracks,
-        customTextSegments,
+        customTextSegments: customTextSegments.map(({ isDragging: _d, ...rest }) => rest),
         bannerTracks,
-        bannerSegments,
+        bannerSegments: bannerSegments.map(({ isDragging: _b, ...rest }) => rest),
+        /** Persists player drag positions for subtitles (by id). */
+        subtitlePixelPositions: subtitles
+          .filter((s) => s.left != null && s.top != null)
+          .map((s) => ({ id: s.id, left: s.left as number, top: s.top as number })),
       };
       const merged: Record<string, unknown> = {
         ...project,
@@ -2153,7 +2348,7 @@ export default function EditorPage() {
     };
   }, [videoUrl]);
 
-  // Re-apply max words limit when setting changes
+  // Re-apply max words limit when setting changes (preserve per-subtitle drag pixels by id)
   useEffect(() => {
     if (rawSegmentSubtitles.length === 0) return;
 
@@ -2162,20 +2357,45 @@ export default function EditorPage() {
       maxWordsPerSegment,
       FPS
     );
-    setSegmentSubtitles(splitSegments);
 
-    // Update current subtitles if in segment mode
+    setSegmentSubtitles((prevSeg) =>
+      applySubtitleDragPixelsById(
+        splitSegments,
+        prevSeg,
+        subtitlesDragPixelSyncRef.current
+      )
+    );
+
     if (subtitleMode !== "word") {
-      setSubtitles(splitSegments);
+      setSubtitles((prevSub) =>
+        applySubtitleDragPixelsById(
+          splitSegments,
+          prevSub,
+          subtitlesDragPixelSyncRef.current
+        )
+      );
     }
   }, [maxWordsPerSegment, rawSegmentSubtitles, subtitleMode]);
+
+  const clearAllSubtitlePixelPositions = useCallback(() => {
+    setSubtitles((prev) => prev.map(stripDraggablePixelPosition));
+    setSegmentSubtitles((prev) => prev.map(stripDraggablePixelPosition));
+    setWordSubtitles((prev) => prev.map(stripDraggablePixelPosition));
+  }, []);
 
   const updateStyle = useCallback(
     <K extends keyof SubtitleStyle>(key: K, value: SubtitleStyle[K]) => {
       setStyle((prev) => ({ ...prev, [key]: value }));
       setActivePreset(null);
+      if (
+        key === "position" ||
+        key === "positionY" ||
+        key === "containerMarginX"
+      ) {
+        clearAllSubtitlePixelPositions();
+      }
     },
-    []
+    [clearAllSubtitlePixelPositions]
   );
 
   // When Customize panel opens or font changes, resolve available weights for the current font
@@ -2276,12 +2496,14 @@ export default function EditorPage() {
         );
         setSubtitles(withDeletions);
       }
+      clearAllSubtitlePixelPositions();
     },
     [
       wordSubtitles,
       rawSegmentSubtitles,
       maxWordsPerSegment,
       deletedRanges,
+      clearAllSubtitlePixelPositions,
     ]
   );
 
@@ -2370,7 +2592,16 @@ export default function EditorPage() {
           if (s.id !== id) return s;
           const patch = typeof updates === "function" ? updates(s) : updates;
           if (patch.style) {
-            return { ...s, ...patch, style: { ...s.style, ...patch.style } as CustomTextStyle };
+            const mergedStyle = { ...s.style, ...patch.style } as CustomTextStyle;
+            let next: CustomTextSegment = { ...s, ...patch, style: mergedStyle };
+            const touchesLayout =
+              "position" in patch.style ||
+              "positionY" in patch.style ||
+              "containerMarginX" in patch.style;
+            if (touchesLayout) {
+              next = stripDraggablePixelPosition(next);
+            }
+            return next;
           }
           const { style: _omit, ...rest } = patch;
           return { ...s, ...rest };
@@ -5139,10 +5370,10 @@ export default function EditorPage() {
                               setBannerSegments((prev) =>
                                 prev.map((s) =>
                                   s.id === selectedBannerSegment
-                                    ? {
+                                    ? stripDraggablePixelPosition({
                                         ...s,
                                         style: { ...s.style, positionY: v },
-                                      }
+                                      })
                                     : s
                                 )
                               )
@@ -7526,10 +7757,10 @@ export default function EditorPage() {
                               setBannerSegments((prev) =>
                                 prev.map((s) =>
                                   s.id === selectedBannerSegment
-                                    ? {
+                                    ? stripDraggablePixelPosition({
                                         ...s,
                                         style: { ...s.style, positionY: v },
-                                      }
+                                      })
                                     : s
                                 )
                               )
@@ -7884,6 +8115,11 @@ export default function EditorPage() {
                 customTextTracks,
                 bannerSegments,
                 bannerTracks,
+                selectedItemId: playerOverlaySelectedId,
+                setSelectedItemId: setPlayerOverlaySelectedId,
+                onSubtitlePositionChange: handleSubtitlePositionChange,
+                onCustomTextPositionChange: handleCustomTextPositionChange,
+                onBannerPositionChange: handleBannerPositionChange,
               }}
               durationInFrames={compositionDuration}
               fps={FPS}
@@ -7891,14 +8127,15 @@ export default function EditorPage() {
               compositionHeight={1920}
               style={{ width: "100%", height: "100%" }}
               loop
+              overflowVisible
             />
           </div>
           {/* Mobile play control - below video, above timeline in aside */}
-          <div className="flex sm:hidden w-full justify-center px-4">
+          <div className="flex w-full justify-center mb-4">
             <Button
-              variant="ghost"
-              size="lg"
-              className="h-12 w-12 rounded-full"
+              variant="nothing"
+              size="sm"
+				  className="h-min"
               onClick={() => {
                 if (!playerRef.current) return;
                 if (isPlaying) {
@@ -7912,9 +8149,9 @@ export default function EditorPage() {
               aria-label={isPlaying ? "Pause" : "Play"}
             >
               {isPlaying ? (
-                <Pause className="size-6" />
+                <Pause size="6" />
               ) : (
-                <Play className="size-6" />
+                <Play size="6" />
               )}
             </Button>
           </div>

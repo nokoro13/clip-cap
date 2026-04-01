@@ -44,16 +44,26 @@ function getBannerPositionStyles(
   };
 }
 
+/** When set, positions the banner in composition pixels (player drag & drop). */
+export type BannerAbsoluteLayout = {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+};
+
 export interface BannerOverlayProps {
   logoUrl: string;
   text: string;
   style: BannerStyle;
+  absoluteLayout?: BannerAbsoluteLayout;
 }
 
 export const BannerOverlay: React.FC<BannerOverlayProps> = ({
   logoUrl,
   text,
   style,
+  absoluteLayout,
 }) => {
   const frame = useCurrentFrame();
   const { fps, width, height } = useVideoConfig();
@@ -132,7 +142,20 @@ export const BannerOverlay: React.FC<BannerOverlayProps> = ({
       break;
   }
 
-  const containerStyles = getBannerPositionStyles(style, width, height);
+  const containerStyles: React.CSSProperties = absoluteLayout
+    ? {
+        position: 'absolute',
+        left: 0,
+        right: 0,
+        width: '100%',
+        top: absoluteLayout.top,
+        height: absoluteLayout.height,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxSizing: 'border-box',
+      }
+    : getBannerPositionStyles(style, width, height);
   const showLogo = !!logoUrl;
 
   const boxShadow =

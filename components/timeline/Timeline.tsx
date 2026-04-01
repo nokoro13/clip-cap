@@ -3,7 +3,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
-import { ChevronUp, ChevronDown, Trash2, ScissorsLineDashed, Type, Crop, Play, Pause, Award, SquareSplitHorizontal } from "lucide-react";
+import { ChevronUp, ChevronDown, Trash2, ScissorsLineDashed, Type, Crop, Play, Pause, Award, SquareSplitVertical } from "lucide-react";
 import { TimelineRuler } from "./TimelineRuler";
 import { VideoTrack } from "./VideoTrack";
 import { SubtitleTrack } from "./SubtitleTrack";
@@ -837,12 +837,12 @@ export const Timeline: React.FC<TimelineProps> = ({
                   : "Split screen: top and bottom crops"
               }
             >
-              <SquareSplitHorizontal size="6" />
+              <SquareSplitVertical size="6" />
             </Button>
           )}
         </div>
 
-        {playerRef && !hidePlayButton && (
+        {/* {playerRef && !hidePlayButton && (
           <div className="absolute left-1/2 -translate-x-1/2 flex items-center">
             <Button
               variant="ghost"
@@ -865,7 +865,7 @@ export const Timeline: React.FC<TimelineProps> = ({
               )}
             </Button>
           </div>
-        )}
+        )} */}
 
         <ZoomControls
           zoom={zoom}

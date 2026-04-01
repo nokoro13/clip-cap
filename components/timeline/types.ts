@@ -1,6 +1,13 @@
 import type { Subtitle } from "../../remotion/Composition";
 import type { PlayerRef } from "@remotion/player";
 
+/** Pixel position overrides for player drag & drop (optional on segments/subtitles). */
+export interface DraggablePosition {
+  left?: number;
+  top?: number;
+  isDragging?: boolean;
+}
+
 /** Pan/zoom transform for video cropping */
 export interface VideoTransform {
   scale: number;
@@ -64,6 +71,10 @@ export interface CustomTextSegment {
   startFrame: number;
   endFrame: number;
   style: CustomTextStyle;
+  /** When set, positions overlay in composition pixels (overrides style position). */
+  left?: number;
+  top?: number;
+  isDragging?: boolean;
 }
 
 /** Custom text track - container for text segments */
@@ -135,6 +146,10 @@ export interface BannerSegment {
   startFrame: number;
   endFrame: number;
   style: BannerStyle;
+  /** When set, positions overlay in composition pixels (overrides style position). */
+  left?: number;
+  top?: number;
+  isDragging?: boolean;
 }
 
 /** Banner track - container for banner segments */

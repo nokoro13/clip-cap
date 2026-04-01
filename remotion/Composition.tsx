@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useCallback, useEffect, useState, useRef } from 'react';
 import {
   AbsoluteFill,
   useCurrentFrame,
@@ -17,8 +17,16 @@ import type {
   BannerSegment,
   BannerTrack,
   SplitScreenConfig,
+  DraggablePosition,
 } from '@/components/timeline/types';
 import { BannerOverlay } from './BannerOverlay';
+import { SortedOverlays } from './SortedOverlays';
+import {
+  getSubtitleDragBounds,
+  getCustomTextDragBounds,
+  getBannerDragBounds,
+} from './drag-bounds';
+import type { DragBounds } from './drag-bounds';
 
 // ============ STYLE TYPES ============
 
@@ -145,6 +153,10 @@ export type Subtitle = {
   startFrame: number;
   endFrame: number;
   words?: WordTiming[]; // Optional word timings for highlighting
+  /** When set, positions subtitle in composition pixels (overrides global style position). */
+  left?: number;
+  top?: number;
+  isDragging?: boolean;
 };
 
 export type SubtitleMode = 'word' | 'segment' | 'segment-highlight' | 'segment-background-highlight';
@@ -191,6 +203,21 @@ export type SubtitleCompositionProps = {
   bannerTracks?: BannerTrack[];
   /** Global split-screen. When a segment defines `splitScreen`, that overrides for that segment. */
   splitScreenConfig?: SplitScreenConfig | null;
+  /** Player drag & drop: selected overlay id (`sub:id`, `ctext:id`, `banner:id`). */
+  selectedItemId?: string | null;
+  setSelectedItemId?: (id: string | null) => void;
+  onSubtitlePositionChange?: (
+    id: string,
+    updater: (pos: DraggablePosition) => DraggablePosition
+  ) => void;
+  onCustomTextPositionChange?: (
+    id: string,
+    updater: (pos: DraggablePosition) => DraggablePosition
+  ) => void;
+  onBannerPositionChange?: (
+    id: string,
+    updater: (pos: DraggablePosition) => DraggablePosition
+  ) => void;
 };
 
 // ============ POSITION HELPER ============
@@ -280,7 +307,8 @@ const HighlightedSubtitleDisplay: React.FC<{
   style: SubtitleStyle;
   segmentStartMs: number;
   highlightColor: string;
-}> = ({ words, style, segmentStartMs, highlightColor }) => {
+  absoluteLayout?: DragBounds;
+}> = ({ words, style, segmentStartMs, highlightColor, absoluteLayout }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -319,7 +347,20 @@ const HighlightedSubtitleDisplay: React.FC<{
       break;
   }
 
-  const positionStyles = getSubtitlePositionStyles(style, scale);
+  const positionStyles: React.CSSProperties = absoluteLayout
+    ? {
+        position: 'absolute',
+        left: absoluteLayout.left,
+        top: absoluteLayout.top,
+        width: absoluteLayout.width,
+        height: absoluteLayout.height,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxSizing: 'border-box',
+      }
+    : getSubtitlePositionStyles(style, scale);
+  const useOuterScale = !absoluteLayout && isPositionWithOuterScale(style);
 
   const textShadows: string[] = [];
   if (style.strokeWidth > 0) {
@@ -361,7 +402,7 @@ const HighlightedSubtitleDisplay: React.FC<{
           display: 'inline-block',
           maxWidth: '100%',
           opacity,
-          transform: !isPositionWithOuterScale(style)
+          transform: !useOuterScale
             ? `scale(${scale}) translateY(${translateY}px)`
             : translateY !== 0
               ? `translateY(${translateY}px)`
@@ -417,7 +458,8 @@ const BackgroundHighlightedSubtitleDisplay: React.FC<{
   style: SubtitleStyle;
   segmentStartMs: number;
   highlightColor: string;
-}> = ({ words, style, segmentStartMs, highlightColor }) => {
+  absoluteLayout?: DragBounds;
+}> = ({ words, style, segmentStartMs, highlightColor, absoluteLayout }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -455,7 +497,20 @@ const BackgroundHighlightedSubtitleDisplay: React.FC<{
       break;
   }
 
-  const positionStyles = getSubtitlePositionStyles(style, scale);
+  const positionStyles: React.CSSProperties = absoluteLayout
+    ? {
+        position: 'absolute',
+        left: absoluteLayout.left,
+        top: absoluteLayout.top,
+        width: absoluteLayout.width,
+        height: absoluteLayout.height,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxSizing: 'border-box',
+      }
+    : getSubtitlePositionStyles(style, scale);
+  const useOuterScale = !absoluteLayout && isPositionWithOuterScale(style);
 
   const textShadows: string[] = [];
   if (style.strokeWidth > 0) {
@@ -497,7 +552,7 @@ const BackgroundHighlightedSubtitleDisplay: React.FC<{
           display: 'inline-block',
           maxWidth: '100%',
           opacity,
-          transform: !isPositionWithOuterScale(style)
+          transform: !useOuterScale
             ? `scale(${scale}) translateY(${translateY}px)`
             : translateY !== 0
               ? `translateY(${translateY}px)`
@@ -545,10 +600,11 @@ const BackgroundHighlightedSubtitleDisplay: React.FC<{
   );
 };
 
-const SubtitleDisplay: React.FC<{ text: string; style: SubtitleStyle }> = ({
-  text,
-  style,
-}) => {
+const SubtitleDisplay: React.FC<{
+  text: string;
+  style: SubtitleStyle;
+  absoluteLayout?: DragBounds;
+}> = ({ text, style, absoluteLayout }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -593,7 +649,20 @@ const SubtitleDisplay: React.FC<{ text: string; style: SubtitleStyle }> = ({
       break;
   }
 
-  const positionStyles = getSubtitlePositionStyles(style, scale);
+  const positionStyles: React.CSSProperties = absoluteLayout
+    ? {
+        position: 'absolute',
+        left: absoluteLayout.left,
+        top: absoluteLayout.top,
+        width: absoluteLayout.width,
+        height: absoluteLayout.height,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxSizing: 'border-box',
+      }
+    : getSubtitlePositionStyles(style, scale);
+  const useOuterScale = !absoluteLayout && isPositionWithOuterScale(style);
 
   const textShadows: string[] = [];
 
@@ -637,7 +706,7 @@ const SubtitleDisplay: React.FC<{ text: string; style: SubtitleStyle }> = ({
           display: 'inline-block',
           maxWidth: '100%',
           opacity,
-          transform: !isPositionWithOuterScale(style)
+          transform: !useOuterScale
             ? `scale(${scale}) translateY(${translateY}px)`
             : translateY !== 0
               ? `translateY(${translateY}px)`
@@ -668,7 +737,8 @@ const SubtitleDisplay: React.FC<{ text: string; style: SubtitleStyle }> = ({
 const CustomTextOverlay: React.FC<{
   text: string;
   style: CustomTextStyle;
-}> = ({ text, style }) => {
+  absoluteLayout?: DragBounds;
+}> = ({ text, style, absoluteLayout }) => {
   const frame = useCurrentFrame();
   const { fps } = useVideoConfig();
 
@@ -713,7 +783,20 @@ const CustomTextOverlay: React.FC<{
       break;
   }
 
-  const positionStyles = getCustomTextPositionStyles(style, scale);
+  const positionStyles: React.CSSProperties = absoluteLayout
+    ? {
+        position: 'absolute',
+        left: absoluteLayout.left,
+        top: absoluteLayout.top,
+        width: absoluteLayout.width,
+        height: absoluteLayout.height,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        boxSizing: 'border-box',
+      }
+    : getCustomTextPositionStyles(style, scale);
+  const useOuterScaleCustom = !absoluteLayout && isCustomTextPositionWithOuterScale(style);
 
   const textShadows: string[] = [];
   if (style.strokeWidth > 0) {
@@ -755,7 +838,7 @@ const CustomTextOverlay: React.FC<{
           display: 'inline-block',
           maxWidth: '100%',
           opacity,
-          transform: !isCustomTextPositionWithOuterScale(style)
+          transform: !useOuterScaleCustom
             ? `scale(${scale}) translateY(${translateY}px)`
             : translateY !== 0
               ? `translateY(${translateY}px)`
@@ -844,6 +927,52 @@ const GoogleFontLoader: React.FC<{
 const COMPOSITION_WIDTH = 1080;
 const COMPOSITION_HEIGHT = 1920;
 
+/** Blurred, scaled cover layer behind sharp `object-fit: contain` video (fills letterbox bars). */
+const LETTERBOX_BLUR_BACKDROP_STYLE: React.CSSProperties = {
+  position: 'absolute',
+  inset: 0,
+  width: '100%',
+  height: '100%',
+  objectFit: 'cover',
+  objectPosition: 'center',
+  filter: 'blur(52px) brightness(0.48)',
+  transform: 'scale(1.14)',
+};
+
+type OffthreadVideoProps = React.ComponentProps<typeof OffthreadVideo>;
+
+/**
+ * When letterboxBlur is true, draws the same footage full-bleed blurred behind the sharp contain layer.
+ */
+function LetterboxVideoWithBlurredBackdrop(
+  props: OffthreadVideoProps & {
+    letterboxBlur: boolean;
+    sharpStyle: React.CSSProperties;
+  }
+) {
+  const { letterboxBlur, sharpStyle, style: _s, ...videoProps } = props;
+
+  if (!letterboxBlur) {
+    return <OffthreadVideo {...videoProps} style={sharpStyle} />;
+  }
+
+  return (
+    <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
+      <OffthreadVideo {...videoProps} style={LETTERBOX_BLUR_BACKDROP_STYLE} />
+      <AbsoluteFill
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: 'transparent',
+        }}
+      >
+        <OffthreadVideo {...videoProps} style={sharpStyle} />
+      </AbsoluteFill>
+    </AbsoluteFill>
+  );
+}
+
 function getCoverDimensions(
   compositionWidth: number,
   compositionHeight: number,
@@ -889,6 +1018,77 @@ function getVideoWrapperStyleForViewport(
   };
 }
 
+function getIntrinsicMediaSize(source: CanvasImageSource): { w: number; h: number } {
+  if (source instanceof HTMLVideoElement) {
+    return { w: source.videoWidth, h: source.videoHeight };
+  }
+  if (source instanceof HTMLImageElement) {
+    return { w: source.naturalWidth, h: source.naturalHeight };
+  }
+  if (typeof ImageBitmap !== 'undefined' && source instanceof ImageBitmap) {
+    return { w: source.width, h: source.height };
+  }
+  if (
+    'width' in source &&
+    'height' in source &&
+    typeof (source as { width: unknown }).width === 'number'
+  ) {
+    const src = source as { width: number; height: number };
+    return { w: src.width, h: src.height };
+  }
+  return { w: 0, h: 0 };
+}
+
+/** Paint one split half to match `<OffthreadVideo>` + wrapper + object-fit in `SplitScreenVideoHalves`. */
+function paintSplitHalfToCanvas(
+  ctx: CanvasRenderingContext2D,
+  source: CanvasImageSource,
+  vw: number,
+  vh: number,
+  t: VideoTransform,
+  videoAspectRatio: number,
+  isPortrait: boolean
+) {
+  const { w: vidW, h: vidH } = getIntrinsicMediaSize(source);
+  if (vidW <= 0 || vidH <= 0) {
+    return;
+  }
+
+  ctx.save();
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, vw, vh);
+  ctx.beginPath();
+  ctx.rect(0, 0, vw, vh);
+  ctx.clip();
+
+  const custom = hasCustomVideoTransform(t);
+  if (custom) {
+    const { coverWidth, coverHeight } = getCoverDimensions(vw, vh, videoAspectRatio);
+    const boxW = coverWidth * t.scale;
+    const boxH = coverHeight * t.scale;
+    const cx = vw / 2 + t.offsetX;
+    const cy = vh / 2 + t.offsetY;
+    ctx.translate(cx - boxW / 2, cy - boxH / 2);
+    const s = Math.max(boxW / vidW, boxH / vidH);
+    const dw = vidW * s;
+    const dh = vidH * s;
+    const dx = (boxW - dw) / 2;
+    const dy = (boxH - dh) / 2;
+    ctx.drawImage(source, 0, 0, vidW, vidH, dx, dy, dw, dh);
+  } else {
+    const useCover = isPortrait;
+    const s = useCover
+      ? Math.max(vw / vidW, vh / vidH)
+      : Math.min(vw / vidW, vh / vidH);
+    const dw = vidW * s;
+    const dh = vidH * s;
+    const dx = (vw - dw) / 2;
+    const dy = (vh - dh) / 2;
+    ctx.drawImage(source, 0, 0, vidW, vidH, dx, dy, dw, dh);
+  }
+  ctx.restore();
+}
+
 function resolveEffectiveSplit(
   segment: VideoSegment | undefined,
   globalSplit: SplitScreenConfig | null | undefined
@@ -902,7 +1102,11 @@ function resolveEffectiveSplit(
   return null;
 }
 
-/** Renders two stacked halves (each full width × half height, e.g. 1080×960). */
+/**
+ * Two stacked halves (1080×960 each) from a single decode: one hidden `<OffthreadVideo>` drives
+ * audio + timeline; `onVideoFrame` mirrors the same frame onto two canvases with independent
+ * crops so preview and export stay aligned without dual HTML5 clocks.
+ */
 function SplitScreenVideoHalves({
   src,
   videoStartFrame,
@@ -925,61 +1129,126 @@ function SplitScreenVideoHalves({
   isPortrait: boolean;
 }) {
   const halfH = COMPOSITION_HEIGHT / 2;
-  const renderHalf = (topPx: number, t: VideoTransform) => {
-    const segHasTransform = hasCustomVideoTransform(t);
-    const wrapperStyle = segHasTransform
-      ? getVideoWrapperStyleForViewport(
-          t,
-          COMPOSITION_WIDTH,
-          halfH,
-          videoAspectRatio
-        )
-      : null;
-    const segVideoStyle: React.CSSProperties =
-      isPortrait || segHasTransform
-        ? { width: '100%', height: '100%', objectFit: 'cover' }
-        : { width: '100%', height: '100%', objectFit: 'contain' };
-    const videoEl = useTrim ? (
-      <OffthreadVideo
-        src={src}
-        trimBefore={trimBefore}
-        trimAfter={trimAfter}
-        style={segVideoStyle}
-        pauseWhenBuffering
-      />
-    ) : (
-      <OffthreadVideo
-        src={src}
-        startFrom={videoStartFrame}
-        style={segVideoStyle}
-        pauseWhenBuffering
-      />
-    );
-    return (
+  const canvasTopRef = useRef<HTMLCanvasElement>(null);
+  const canvasBottomRef = useRef<HTMLCanvasElement>(null);
+  const splitPaintRef = useRef({
+    topTransform,
+    bottomTransform,
+    videoAspectRatio,
+    isPortrait,
+    halfH,
+  });
+  splitPaintRef.current = {
+    topTransform,
+    bottomTransform,
+    videoAspectRatio,
+    isPortrait,
+    halfH,
+  };
+
+  const onVideoFrame = useCallback((frame: CanvasImageSource) => {
+    const canvasTop = canvasTopRef.current;
+    const canvasBottom = canvasBottomRef.current;
+    if (!canvasTop || !canvasBottom) {
+      return;
+    }
+    const ctxTop = canvasTop.getContext('2d');
+    const ctxBottom = canvasBottom.getContext('2d');
+    if (!ctxTop || !ctxBottom) {
+      return;
+    }
+    const { topTransform: tt, bottomTransform: bt, videoAspectRatio: ar, isPortrait: ip, halfH: hh } =
+      splitPaintRef.current;
+    paintSplitHalfToCanvas(ctxTop, frame, COMPOSITION_WIDTH, hh, tt, ar, ip);
+    paintSplitHalfToCanvas(ctxBottom, frame, COMPOSITION_WIDTH, hh, bt, ar, ip);
+  }, []);
+
+  const hiddenVideoStyle: React.CSSProperties = {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    width: 4,
+    height: 4,
+    opacity: 0,
+    pointerEvents: 'none',
+  };
+
+  const videoEl = useTrim ? (
+    <OffthreadVideo
+      src={src}
+      trimBefore={trimBefore}
+      trimAfter={trimAfter}
+      style={hiddenVideoStyle}
+      volume={1}
+      pauseWhenBuffering
+      onVideoFrame={onVideoFrame}
+      showInTimeline={false}
+    />
+  ) : (
+    <OffthreadVideo
+      src={src}
+      startFrom={videoStartFrame}
+      style={hiddenVideoStyle}
+      volume={1}
+      pauseWhenBuffering
+      onVideoFrame={onVideoFrame}
+      showInTimeline={false}
+    />
+  );
+
+  return (
+    <>
+      {videoEl}
       <div
         style={{
           position: 'absolute',
           left: 0,
-          top: topPx,
+          top: 0,
           width: COMPOSITION_WIDTH,
           height: halfH,
-          overflow: 'hidden',
           backgroundColor: '#000',
         }}
       >
-        {wrapperStyle ? <div style={wrapperStyle}>{videoEl}</div> : videoEl}
+        <canvas
+          ref={canvasTopRef}
+          width={COMPOSITION_WIDTH}
+          height={halfH}
+          style={{ display: 'block', width: COMPOSITION_WIDTH, height: halfH }}
+        />
       </div>
-    );
-  };
-  return (
-    <>
-      {renderHalf(0, topTransform)}
-      {renderHalf(halfH, bottomTransform)}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          top: halfH,
+          width: COMPOSITION_WIDTH,
+          height: halfH,
+          backgroundColor: '#000',
+        }}
+      >
+        <canvas
+          ref={canvasBottomRef}
+          width={COMPOSITION_WIDTH}
+          height={halfH}
+          style={{ display: 'block', width: COMPOSITION_WIDTH, height: halfH }}
+        />
+      </div>
     </>
   );
 }
 
 // ============ MAIN COMPOSITION ============
+
+function getDragAbsoluteLayout(
+  left: number | undefined,
+  top: number | undefined,
+  bounds: DragBounds
+): DragBounds | undefined {
+  if (left == null || top == null) {
+    return undefined;
+  }
+  return { left, top, width: bounds.width, height: bounds.height };
+}
 
 export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
   videoUrl,
@@ -996,6 +1265,11 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
   bannerSegments = [],
   bannerTracks = [],
   splitScreenConfig = null,
+  selectedItemId = null,
+  setSelectedItemId,
+  onSubtitlePositionChange,
+  onCustomTextPositionChange,
+  onBannerPositionChange,
 }) => {
   const { fps } = useVideoConfig();
   const videoStartFrame = Math.round((videoStartFrom / 1000) * fps);
@@ -1058,9 +1332,35 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
 
   const globalSplitOn = Boolean(splitScreenConfig?.enabled);
 
+  const interactionEnabled = Boolean(
+    onSubtitlePositionChange ?? onCustomTextPositionChange ?? onBannerPositionChange
+  );
+
+  const handleCanvasPointerDown = useCallback(
+    (e: React.PointerEvent) => {
+      if (!setSelectedItemId) {
+        return;
+      }
+      if (e.button !== 0) {
+        return;
+      }
+      setSelectedItemId(null);
+    },
+    [setSelectedItemId]
+  );
+
   return (
     <GoogleFontLoader style={style}>
-      <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
+      <AbsoluteFill
+        style={{
+          backgroundColor: '#000',
+          overflow: interactionEnabled ? 'visible' : 'hidden',
+        }}
+        onPointerDown={
+          interactionEnabled && setSelectedItemId ? handleCanvasPointerDown : undefined
+        }
+      >
+        <AbsoluteFill style={{ overflow: 'hidden' }}>
         {useVideoSegments ? (
           videoSegments.map((segment) => {
             const durationFrames = segment.endFrame - segment.startFrame;
@@ -1097,6 +1397,7 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
 
             const segTransform = segment.transform ?? videoTransform;
             const segHasTransform = hasCustomVideoTransform(segTransform);
+            const letterboxBlurSeg = !isPortrait && !segHasTransform;
             const segWrapperStyle =
               segHasTransform && segTransform
                 ? getVideoWrapperStyleFull(segTransform)
@@ -1117,11 +1418,12 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
                   />
                 </div>
               ) : (
-                <OffthreadVideo
+                <LetterboxVideoWithBlurredBackdrop
+                  letterboxBlur={letterboxBlurSeg}
+                  sharpStyle={segVideoStyle}
                   src={segment.sourceVideoUrl}
                   trimBefore={segment.sourceStartFrame}
                   trimAfter={segment.sourceEndFrame}
-                  style={segVideoStyle}
                   pauseWhenBuffering
                 />
               );
@@ -1158,10 +1460,11 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
               />
             </div>
           ) : (
-            <OffthreadVideo
+            <LetterboxVideoWithBlurredBackdrop
+              letterboxBlur={!isPortrait && !globalHasTransform}
+              sharpStyle={videoStyle}
               src={videoUrl}
               startFrom={videoStartFrame}
-              style={videoStyle}
             />
           )
         ) : null}
@@ -1182,7 +1485,14 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
 
         {visibleSubtitles
           .filter((subtitle) => subtitle.endFrame > subtitle.startFrame)
-          .map((subtitle) => (
+          .map((subtitle) => {
+            const subBounds = getSubtitleDragBounds(subtitle.text, style);
+            const subtitleAbs = getDragAbsoluteLayout(
+              subtitle.left,
+              subtitle.top,
+              subBounds
+            );
+            return (
             <Sequence
               key={subtitle.id}
               from={subtitle.startFrame}
@@ -1194,6 +1504,7 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
                   style={style}
                   segmentStartMs={subtitle.startFrame * (1000 / fps)}
                   highlightColor={highlightColor}
+                  absoluteLayout={subtitleAbs}
                 />
               ) : subtitleMode === 'segment-highlight' && subtitle.words && subtitle.words.length > 0 ? (
                 <HighlightedSubtitleDisplay
@@ -1201,24 +1512,41 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
                   style={style}
                   segmentStartMs={subtitle.startFrame * (1000 / fps)}
                   highlightColor={highlightColor}
+                  absoluteLayout={subtitleAbs}
                 />
               ) : (
-                <SubtitleDisplay text={subtitle.text} style={style} />
+                <SubtitleDisplay text={subtitle.text} style={style} absoluteLayout={subtitleAbs} />
               )}
             </Sequence>
-          ))}
+          );
+          })}
 
-        {visibleCustomTextSegments.map((seg) => (
+        {visibleCustomTextSegments.map((seg) => {
+          const ctBounds = getCustomTextDragBounds(seg.text, seg.style);
+          const customAbs = getDragAbsoluteLayout(seg.left, seg.top, ctBounds);
+          return (
           <Sequence
             key={seg.id}
             from={seg.startFrame}
             durationInFrames={Math.max(1, seg.endFrame - seg.startFrame)}
           >
-            <CustomTextOverlay text={seg.text} style={seg.style} />
+            <CustomTextOverlay text={seg.text} style={seg.style} absoluteLayout={customAbs} />
           </Sequence>
-        ))}
+        );
+        })}
 
-        {visibleBannerSegments.map((seg) => (
+        {visibleBannerSegments.map((seg) => {
+          const bBounds = getBannerDragBounds(seg.text, seg.style, seg.logoUrl);
+          const bannerAbs =
+            seg.left != null && seg.top != null
+              ? {
+                  left: 0,
+                  top: seg.top,
+                  width: COMPOSITION_WIDTH,
+                  height: bBounds.height,
+                }
+              : undefined;
+          return (
           <Sequence
             key={seg.id}
             from={seg.startFrame}
@@ -1228,9 +1556,25 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
               logoUrl={seg.logoUrl}
               text={seg.text}
               style={seg.style}
+              absoluteLayout={bannerAbs}
             />
           </Sequence>
-        ))}
+        );
+        })}
+        </AbsoluteFill>
+        {interactionEnabled && setSelectedItemId ? (
+          <SortedOverlays
+            subtitles={visibleSubtitles.filter((s) => s.endFrame > s.startFrame) as Subtitle[]}
+            subtitleStyle={style}
+            customTextSegments={visibleCustomTextSegments}
+            bannerSegments={visibleBannerSegments}
+            selectedItemId={selectedItemId}
+            setSelectedItemId={setSelectedItemId}
+            onSubtitlePositionChange={onSubtitlePositionChange}
+            onCustomTextPositionChange={onCustomTextPositionChange}
+            onBannerPositionChange={onBannerPositionChange}
+          />
+        ) : null}
       </AbsoluteFill>
     </GoogleFontLoader>
   );
