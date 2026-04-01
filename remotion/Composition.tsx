@@ -956,9 +956,12 @@ function LetterboxVideoWithBlurredBackdrop(
     return <OffthreadVideo {...videoProps} style={sharpStyle} />;
   }
 
+  // Backdrop must stay muted: two decodes already cost CPU/GPU (esp. mobile); a second audio track causes echo.
+  const backdropProps = { ...videoProps, volume: 0 as const };
+
   return (
     <AbsoluteFill style={{ backgroundColor: '#000', overflow: 'hidden' }}>
-      <OffthreadVideo {...videoProps} style={LETTERBOX_BLUR_BACKDROP_STYLE} />
+      <OffthreadVideo {...backdropProps} style={LETTERBOX_BLUR_BACKDROP_STYLE} />
       <AbsoluteFill
         style={{
           display: 'flex',
