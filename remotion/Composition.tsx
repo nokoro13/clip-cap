@@ -218,6 +218,8 @@ export type SubtitleCompositionProps = {
     id: string,
     updater: (pos: DraggablePosition) => DraggablePosition
   ) => void;
+  /** Editor: pause preview when user drags an overlay in the player. */
+  onPlayerOverlayDragStart?: () => void;
 };
 
 // ============ POSITION HELPER ============
@@ -1273,6 +1275,7 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
   onSubtitlePositionChange,
   onCustomTextPositionChange,
   onBannerPositionChange,
+  onPlayerOverlayDragStart,
 }) => {
   const { fps } = useVideoConfig();
   const videoStartFrame = Math.round((videoStartFrom / 1000) * fps);
@@ -1576,6 +1579,7 @@ export const SubtitleComposition: React.FC<SubtitleCompositionProps> = ({
             onSubtitlePositionChange={onSubtitlePositionChange}
             onCustomTextPositionChange={onCustomTextPositionChange}
             onBannerPositionChange={onBannerPositionChange}
+            onDragInteractionStart={onPlayerOverlayDragStart}
           />
         ) : null}
       </AbsoluteFill>

@@ -20,6 +20,8 @@ export type DraggableOverlayProps = {
   durationInFrames: number;
   /** Banner-style: span full width, only vertical drag; synced left is always 0. */
   verticalOnly?: boolean;
+  /** Called when the user begins dragging (e.g. pause the preview player). */
+  onDragStart?: () => void;
 };
 
 function clamp(v: number, min: number, max: number): number {
@@ -45,6 +47,7 @@ export const DraggableOverlay: React.FC<DraggableOverlayProps> = ({
   from,
   durationInFrames,
   verticalOnly = false,
+  onDragStart,
 }) => {
   const scale = useCurrentScale();
   const scaledBorder = Math.ceil(2 / scale);
@@ -87,6 +90,7 @@ export const DraggableOverlay: React.FC<DraggableOverlayProps> = ({
 
   const startDragging = useCallback(
     (e: PointerEvent | React.MouseEvent) => {
+      onDragStart?.();
       const initialX = e.clientX;
       const initialY = e.clientY;
       const startLeft = effectiveLeft;
@@ -136,6 +140,7 @@ export const DraggableOverlay: React.FC<DraggableOverlayProps> = ({
       compositionWidth,
       compositionHeight,
       changeItem,
+      onDragStart,
     ]
   );
 

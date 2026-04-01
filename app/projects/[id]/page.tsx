@@ -867,7 +867,14 @@ export default function ProjectGalleryPage() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-8 text-green-500 hover:bg-green-500/20 hover:text-green-400"
+                  className="size-8 text-green-500 hover:bg-green-500/20 hover:text-green-400 disabled:opacity-40"
+                  disabled={clip.status === 'approved'}
+                  title={
+                    clip.status === 'approved'
+                      ? 'Already in Approved'
+                      : 'Move to Approved'
+                  }
+                  aria-pressed={clip.status === 'approved'}
                   onClick={() => updateClipStatus(clip.id, 'approved')}
                 >
                   <Check className="size-4" />
@@ -875,7 +882,14 @@ export default function ProjectGalleryPage() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-8 text-red-500 hover:bg-red-500/20 hover:text-red-400"
+                  className="size-8 text-red-500 hover:bg-red-500/20 hover:text-red-400 disabled:opacity-40"
+                  disabled={clip.status === 'rejected'}
+                  title={
+                    clip.status === 'rejected'
+                      ? 'Already in Rejected'
+                      : 'Move to Rejected'
+                  }
+                  aria-pressed={clip.status === 'rejected'}
                   onClick={() => updateClipStatus(clip.id, 'rejected')}
                 >
                   <X className="size-4" />
@@ -883,7 +897,14 @@ export default function ProjectGalleryPage() {
                 <Button
                   size="icon"
                   variant="ghost"
-                  className="size-8"
+                  className="size-8 disabled:opacity-40"
+                  disabled={clip.status === 'archived'}
+                  title={
+                    clip.status === 'archived'
+                      ? 'Already in Archived'
+                      : 'Move to Archived'
+                  }
+                  aria-pressed={clip.status === 'archived'}
                   onClick={() => updateClipStatus(clip.id, 'archived')}
                 >
                   <Archive className="size-4" />

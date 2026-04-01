@@ -51,6 +51,8 @@ export type SortedOverlaysProps = {
     id: string,
     updater: (pos: DraggablePosition) => DraggablePosition
   ) => void;
+  /** Fired when any overlay drag starts (e.g. pause the Player). */
+  onDragInteractionStart?: () => void;
 };
 
 function displaySelectedLast(rows: OverlayRow[], selectedItemId: string | null): OverlayRow[] {
@@ -75,6 +77,7 @@ export const SortedOverlays: React.FC<SortedOverlaysProps> = ({
   onSubtitlePositionChange,
   onCustomTextPositionChange,
   onBannerPositionChange,
+  onDragInteractionStart,
 }) => {
   const isDraggingAny = useMemo(
     () =>
@@ -174,6 +177,7 @@ export const SortedOverlays: React.FC<SortedOverlaysProps> = ({
           from={row.from}
           durationInFrames={row.durationInFrames}
           verticalOnly={row.verticalOnly}
+          onDragStart={onDragInteractionStart}
         />
       ))}
     </AbsoluteFill>

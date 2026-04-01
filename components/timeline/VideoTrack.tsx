@@ -14,6 +14,7 @@ export const VideoTrack: React.FC<VideoTrackProps> = ({
   videoDuration,
   fps,
   zoom,
+  manualClipTimelineLayout = false,
   onDragStart,
 }) => {
   const width = calculateTimelineWidth(videoDuration, fps, zoom);

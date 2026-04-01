@@ -45,6 +45,7 @@ import {
   saveExportedClipVideo,
   shouldUseShareSheetForExport,
 } from "@/lib/export-video-download";
+import { markClipExportedAfterExport } from "@/lib/parent-project-clip-status";
 import {
   FONTS_LIST,
   getFontDisplayName,
@@ -369,6 +370,7 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.25,
       wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-background-highlight",
     maxWordsPerSegment: 3,
@@ -401,6 +403,7 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.25,
       wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-highlight",
     maxWordsPerSegment: 4,
@@ -433,6 +436,7 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.25,
       wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "word",
   },
@@ -463,6 +467,7 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.25,
       wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-highlight",
     maxWordsPerSegment: 3,
@@ -528,7 +533,7 @@ const PRESET_STYLES: {
       uppercase: false,
       lineHeight: 1.25,
       wordSpacing: 0,
-		containerMarginX: 0,
+		containerMarginX: 200,
     },
 		subtitleMode: "segment-highlight",
 		maxWordsPerSegment: 3,
@@ -543,7 +548,7 @@ const PRESET_STYLES: {
       fontSize: 58,
       fontWeight: 900,
       fontStyle: "normal",
-      textColor: "#000000",
+      textColor: "#ffffff",
       backgroundColor: "#facc15",
       backgroundOpacity: 1,
       strokeWidth: 0,
@@ -561,10 +566,11 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.2,
       wordSpacing: 8,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-highlight",
     maxWordsPerSegment: 2,
-    highlightColor: "#ffffff",
+    highlightColor: "#000000",
   },
   {
     id: "minimal",
@@ -593,6 +599,7 @@ const PRESET_STYLES: {
       uppercase: false,
       lineHeight: 1.3,
       wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "segment",
     maxWordsPerSegment: 6,
@@ -625,6 +632,7 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.15,
       wordSpacing: 4,
+		containerMarginX: 200,
     },
     subtitleMode: "word",
     maxWordsPerSegment: 1,
@@ -657,6 +665,7 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.2,
       wordSpacing: 6,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-background-highlight",
     maxWordsPerSegment: 2,
@@ -689,6 +698,7 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.3,
       wordSpacing: 4,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-highlight",
     maxWordsPerSegment: 3,
@@ -721,6 +731,7 @@ const PRESET_STYLES: {
       uppercase: false,
       lineHeight: 1.4,
       wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "segment",
     maxWordsPerSegment: 8,
@@ -753,6 +764,7 @@ const PRESET_STYLES: {
       uppercase: false,
       lineHeight: 1.4,
       wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "segment",
     maxWordsPerSegment: 7,
@@ -785,6 +797,7 @@ const PRESET_STYLES: {
       uppercase: false,
       lineHeight: 1.35,
       wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "segment",
     maxWordsPerSegment: 6,
@@ -817,6 +830,7 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.2,
       wordSpacing: 6,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-background-highlight",
     maxWordsPerSegment: 2,
@@ -849,6 +863,7 @@ const PRESET_STYLES: {
       uppercase: false,
       lineHeight: 1.45,
       wordSpacing: 0,
+		containerMarginX: 200,
     },
     subtitleMode: "segment",
     maxWordsPerSegment: 10,
@@ -881,6 +896,7 @@ const PRESET_STYLES: {
       uppercase: true,
       lineHeight: 1.25,
       wordSpacing: 8,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-highlight",
     maxWordsPerSegment: 2,
@@ -913,6 +929,7 @@ const PRESET_STYLES: {
       uppercase: false,
       lineHeight: 1.2,
       wordSpacing: 4,
+		containerMarginX: 200,
     },
     subtitleMode: "segment-highlight",
     maxWordsPerSegment: 4,
@@ -1446,6 +1463,9 @@ export default function EditorPage() {
     },
     []
   );
+  const handlePlayerOverlayDragStart = useCallback(() => {
+    playerRef.current?.pause();
+  }, []);
   const [leftPanelTab, setLeftPanelTab] = useState<"styling" | "subtitles" | "text" | "banners">("styling");
   const [mobilePanelTab, setMobilePanelTab] = useState<
     "" | "styling" | "subtitles" | "text" | "banners" | "timeline"
@@ -1705,6 +1725,12 @@ export default function EditorPage() {
           const progress = apiProject.exportProgress ?? 0;
           if (status === "done" && url) {
             setExportDownloadUrl(url);
+            const parentIdForExport =
+              typeof apiProject.parentProjectId === "string" &&
+              apiProject.parentProjectId.length > 0
+                ? apiProject.parentProjectId
+                : undefined;
+            markClipExportedAfterExport(projectId, parentIdForExport);
           } else if (status === "exporting" && apiProject.exportRenderId && apiProject.exportBucketName) {
             setIsExporting(true);
             setExportProgress(progress);
@@ -2023,6 +2049,7 @@ export default function EditorPage() {
               const downloadUrl = `/api/download/export?renderId=${encodeURIComponent(renderId)}&bucket=${encodeURIComponent(bucketName)}`;
               setExportDownloadUrl(downloadUrl);
             }
+            markClipExportedAfterExport(params.id as string, null);
             toast({
               variant: "success",
               title: "Video exported",
@@ -2056,7 +2083,7 @@ export default function EditorPage() {
     return () => {
       cancelled = true;
     };
-  }, [pendingExportResume]);
+  }, [pendingExportResume, params.id]);
 
   // Poll export lock when tab becomes visible (user may have started export elsewhere)
   useEffect(() => {
@@ -2930,6 +2957,7 @@ export default function EditorPage() {
             const downloadUrl = `/api/download/export?renderId=${encodeURIComponent(renderId)}&bucket=${encodeURIComponent(bucketName)}`;
             setExportDownloadUrl(downloadUrl);
           }
+          markClipExportedAfterExport(params.id as string, null);
           toast({
             variant: "success",
             title: "Video exported",
@@ -8168,6 +8196,7 @@ export default function EditorPage() {
                 onSubtitlePositionChange: handleSubtitlePositionChange,
                 onCustomTextPositionChange: handleCustomTextPositionChange,
                 onBannerPositionChange: handleBannerPositionChange,
+                onPlayerOverlayDragStart: handlePlayerOverlayDragStart,
               }}
               durationInFrames={compositionDuration}
               fps={FPS}

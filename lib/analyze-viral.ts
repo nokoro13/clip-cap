@@ -56,7 +56,7 @@ Examples of WRONG Clip Boundaries (NEVER DO THIS)
 ❌ A conversation about dating → clip ends mid-conversation while still discussing dating
 ❌ "You won't believe what I found" → clip ends before showing what they found
 ❌ A tutorial starts → clip ends before showing the result
-❌ Someone asks a provocative question → clip ends before the answer
+❌ Someone asks a question → clip ends before the answer
 
 ═══════════════════════════════════════════════════════════════
 Examples of CORRECT Clip Boundaries

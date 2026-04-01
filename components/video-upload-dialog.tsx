@@ -246,14 +246,14 @@ export function VideoUploadDialog({
               </div>
 
               {/* Google Drive Button */}
-              <Button
+              {/* <Button
                 variant="outline"
                 className="mx-auto w-fit gap-2"
                 onClick={onGoogleDriveImport}
               >
                 <GoogleDriveIcon className="size-5" />
                 Import from Google Drive
-              </Button>
+              </Button> */}
 
               {/* Drop Zone */}
               <div
