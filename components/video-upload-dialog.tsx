@@ -45,6 +45,8 @@ interface VideoUploadDialogProps {
   };
   /** Reject file uploads longer than this (seconds). YouTube is validated on the server. */
   maxDurationSeconds?: number;
+  /** If opening and this returns false, the dialog stays closed (e.g. project cap). */
+  beforeOpen?: () => boolean;
 }
 
 const MAX_TOPICS = 3;
@@ -57,6 +59,7 @@ export function VideoUploadDialog({
   trigger,
   subscriptionGate,
   maxDurationSeconds = BULK_GENERATE_MAX_DURATION_SEC,
+  beforeOpen,
 }: VideoUploadDialogProps) {
   const [open, setOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -160,8 +163,18 @@ export function VideoUploadDialog({
     fileInputRef.current?.click();
   }, []);
 
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (next && beforeOpen && !beforeOpen()) {
+        return;
+      }
+      setOpen(next);
+    },
+    [beforeOpen]
+  );
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         {trigger || <Button>Upload</Button>}
       </DialogTrigger>

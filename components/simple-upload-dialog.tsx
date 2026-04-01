@@ -32,6 +32,8 @@ interface SimpleUploadDialogProps {
     premiumCheckoutUrl: string;
     intent?: SubscribeIntent;
   };
+  /** If opening and this returns false, the dialog stays closed (e.g. project cap). */
+  beforeOpen?: () => boolean;
 }
 
 export function SimpleUploadDialog({
@@ -41,6 +43,7 @@ export function SimpleUploadDialog({
   description,
   maxDurationSeconds = GENERATE_SUBTITLES_MAX_DURATION_SEC,
   subscriptionGate,
+  beforeOpen,
 }: SimpleUploadDialogProps) {
   const resolvedDescription =
     description ??
@@ -119,8 +122,18 @@ export function SimpleUploadDialog({
     fileInputRef.current?.click();
   }, []);
 
+  const handleOpenChange = useCallback(
+    (next: boolean) => {
+      if (next && beforeOpen && !beforeOpen()) {
+        return;
+      }
+      setOpen(next);
+    },
+    [beforeOpen]
+  );
+
   return (
-    <Dialog open={open} onOpenChange={setOpen}>
+    <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogTrigger asChild>
         {trigger || <Button>Upload</Button>}
       </DialogTrigger>

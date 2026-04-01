@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter, useParams } from 'next/navigation';
-import { useState } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { Captions, Layers, Lock } from 'lucide-react';
 import { SimpleUploadDialog } from '@/components/simple-upload-dialog';
 import { VideoUploadDialog, type ClipTopicId } from '@/components/video-upload-dialog';
@@ -9,7 +9,14 @@ import { SubscribeDialog, type SubscribeIntent } from '@/components/subscribe-di
 import { UsageBadge } from '@/components/usage-badge';
 import type { UserUsageStats } from '@/lib/user-usage-types';
 import { cn } from '@/lib/utils';
-import { notifyProjectIndexUpdate } from '@/lib/project-index';
+import {
+  notifyProjectIndexUpdate,
+  PROJECT_INDEX_UPDATE_EVENT,
+} from '@/lib/project-index';
+import {
+  MAX_ACTIVE_PROJECTS_PER_EXPERIENCE,
+  MAX_PROJECTS_TOAST_DESCRIPTION,
+} from '@/lib/project-limits';
 import { saveProjectToApi } from '@/lib/project-api';
 import { saveVideoBlob } from '@/lib/video-storage';
 import { uploadVideoToS3 } from '@/lib/upload-video-s3';
@@ -90,6 +97,54 @@ export function QuickStartCards({
   const [limitDialogOpen, setLimitDialogOpen] = useState(false);
   const [limitDialogIntent, setLimitDialogIntent] =
     useState<SubscribeIntent>('subscribe');
+  const [activeProjectCount, setActiveProjectCount] = useState<number | null>(
+    null
+  );
+
+  const refreshActiveProjectCount = useCallback(async () => {
+    if (!experienceId) return;
+    try {
+      const res = await fetch(
+        `/api/projects?experienceId=${encodeURIComponent(experienceId)}`
+      );
+      if (!res.ok) return;
+      const list = (await res.json()) as unknown;
+      setActiveProjectCount(Array.isArray(list) ? list.length : 0);
+    } catch {
+      setActiveProjectCount(null);
+    }
+  }, [experienceId]);
+
+  useEffect(() => {
+    void refreshActiveProjectCount();
+  }, [refreshActiveProjectCount]);
+
+  useEffect(() => {
+    const onUpdate = () => void refreshActiveProjectCount();
+    window.addEventListener(PROJECT_INDEX_UPDATE_EVENT, onUpdate);
+    return () => {
+      window.removeEventListener(PROJECT_INDEX_UPDATE_EVENT, onUpdate);
+    };
+  }, [refreshActiveProjectCount]);
+
+  const guardNewProjectAllowed = useCallback((): boolean => {
+    if (!hasAccess) return true;
+    if (activeProjectCount === null) return true;
+    return activeProjectCount < MAX_ACTIVE_PROJECTS_PER_EXPERIENCE;
+  }, [hasAccess, activeProjectCount]);
+
+  const toastProjectCap = useCallback(() => {
+    toast({
+      variant: 'destructive',
+      description: MAX_PROJECTS_TOAST_DESCRIPTION,
+    });
+  }, []);
+
+  const beforeOpenNewProject = useCallback((): boolean => {
+    if (guardNewProjectAllowed()) return true;
+    toastProjectCap();
+    return false;
+  }, [guardNewProjectAllowed, toastProjectCap]);
 
   const openLimitDialog = (intent: SubscribeIntent) => {
     setLimitDialogIntent(intent);
@@ -97,6 +152,11 @@ export function QuickStartCards({
   };
 
   const handleSingleVideoSelect = async (file: File) => {
+    if (!guardNewProjectAllowed()) {
+      toastProjectCap();
+      return;
+    }
+
     if (usageStats && usageStats.generateSubtitles.used >= usageStats.generateSubtitles.limit) {
       if (usageStats.accessLevel === 'basic') {
         openLimitDialog('upgrade_to_premium');
@@ -225,6 +285,11 @@ export function QuickStartCards({
   };
 
   const handleBulkVideoSelect = async (file: File, topics: ClipTopicId[] = ['auto']) => {
+    if (!guardNewProjectAllowed()) {
+      toastProjectCap();
+      return;
+    }
+
     if (accessLevel === 'basic') {
       openLimitDialog('upgrade_to_premium');
       return;
@@ -374,6 +439,11 @@ export function QuickStartCards({
   };
 
   const handleYoutubeUrl = async (url: string, topics: ClipTopicId[] = ['auto']) => {
+    if (!guardNewProjectAllowed()) {
+      toastProjectCap();
+      return;
+    }
+
     if (accessLevel === 'basic') {
       openLimitDialog('upgrade_to_premium');
       return;
@@ -549,12 +619,6 @@ export function QuickStartCards({
         'relative flex h-full cursor-pointer flex-col rounded-xl bg-muted/50 p-4 gap-8 transition-all hover:bg-muted hover:shadow-md'
       )}
     >
-      {props.lockedPremium ? (
-        <span className="absolute right-3 top-3 flex gap-1 rounded-full bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
-          <Lock className="size-3 shrink-0" aria-hidden />
-          Premium
-        </span>
-      ) : null}
       <div className="flex justify-between">
 			{props.icon}
 			<span className="w-max-w mt-0">{props.footer}</span>
@@ -578,6 +642,7 @@ export function QuickStartCards({
           title="Generate Subtitles"
           description="MP4 or MOV, max 5 minutes, max size 500MB (audio extracted for transcription)"
           subscriptionGate={subscriptionGate}
+          beforeOpen={subscriptionGate ? undefined : beforeOpenNewProject}
           trigger={
             <button type="button" className="h-full w-full text-left">
               {cardContent({
@@ -608,6 +673,9 @@ export function QuickStartCards({
           onGoogleDriveImport={handleGoogleDriveImport}
           onSampleVideoSelect={handleSampleVideoSelect}
           subscriptionGate={subscriptionGate ?? bulkPremiumGate}
+          beforeOpen={
+            subscriptionGate || bulkPremiumGate ? undefined : beforeOpenNewProject
+          }
           trigger={
             <button type="button" className="h-full w-full text-left">
               {cardContent({

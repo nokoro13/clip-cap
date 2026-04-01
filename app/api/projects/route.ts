@@ -4,8 +4,7 @@ import { eq, and, desc, count, isNull } from 'drizzle-orm';
 import { whopsdk } from '@/lib/whop-sdk';
 import { db } from '@/lib/db';
 import { projects } from '@/lib/db/schema';
-
-const MAX_PROJECTS_PER_USER = 10;
+import { MAX_ACTIVE_PROJECTS_PER_EXPERIENCE } from '@/lib/project-limits';
 
 function extractS3KeyFromUrl(videoUrl: string | null | undefined): string | null {
   if (!videoUrl || !videoUrl.includes('.s3.') && !videoUrl.includes('amazonaws.com')) {
@@ -264,9 +263,9 @@ export async function POST(request: Request) {
         );
 
       const total = countResult[0]?.count ?? 0;
-      if (total >= MAX_PROJECTS_PER_USER) {
+      if (total >= MAX_ACTIVE_PROJECTS_PER_EXPERIENCE) {
         return NextResponse.json(
-          { error: `Maximum ${MAX_PROJECTS_PER_USER} projects per experience. Delete an existing project first.` },
+          { error: `Maximum ${MAX_ACTIVE_PROJECTS_PER_EXPERIENCE} projects per experience. Delete an existing project first.` },
           { status: 400 }
         );
       }

@@ -89,7 +89,7 @@ export function SubscribeDialog({
             <div className="flex items-center justify-between">
               <span className="font-semibold">Basic Access</span>
               {!upgrade ? (
-                <span className="text-sm text-muted-foreground">3 days free</span>
+                <span className="text-sm text-muted-foreground">$14.99/mo</span>
               ) : (
                 <span className="text-xs font-medium text-muted-foreground">
                   Current tier
@@ -99,10 +99,10 @@ export function SubscribeDialog({
             <p className="text-sm text-muted-foreground">
               {upgrade
                 ? '50 AI subtitle uploads / month. Bulk Generate is not included.'
-                : 'Then $19.99 per month. Perfect to get started.'}
+                : '$14.99 per month. Perfect to get started.'}
             </p>
             <Button variant="secondary" className="w-full" size="sm">
-              {upgrade ? 'Manage Basic' : 'Start free trial'}
+              {upgrade ? 'Manage Basic' : 'Get Basic'}
             </Button>
           </a>
           <a
