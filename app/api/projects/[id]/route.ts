@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { eq, and } from 'drizzle-orm';
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3';
 import { whopsdk } from '@/lib/whop-sdk';
 import { db } from '@/lib/db';
 import { projects } from '@/lib/db/schema';
@@ -33,6 +33,50 @@ async function deleteS3Object(key: string): Promise<void> {
       Key: key,
     })
   );
+}
+
+/** Delete all objects under renders/<renderId>/ (e.g. out.mp4, progress.json). */
+async function deleteRenderFolder(bucket: string, renderId: string): Promise<void> {
+  const region = process.env.AWS_REGION || 'us-east-2';
+  const accessKeyId =
+    process.env.REMOTION_AWS_ACCESS_KEY_ID || process.env.AWS_ACCESS_KEY_ID;
+  const secretAccessKey =
+    process.env.REMOTION_AWS_SECRET_ACCESS_KEY || process.env.AWS_SECRET_ACCESS_KEY;
+
+  if (!accessKeyId || !secretAccessKey) {
+    throw new Error('AWS credentials not configured');
+  }
+
+  const client = new S3Client({
+    region,
+    credentials: { accessKeyId, secretAccessKey },
+  });
+
+  const prefix = `renders/${renderId}/`;
+  let continuationToken: string | undefined;
+
+  do {
+    const listResp = await client.send(
+      new ListObjectsV2Command({
+        Bucket: bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+      })
+    );
+
+    const keys =
+      listResp.Contents?.map((o) => o.Key).filter((k): k is string => Boolean(k)) ?? [];
+    continuationToken = listResp.IsTruncated ? listResp.NextContinuationToken : undefined;
+
+    for (const key of keys) {
+      await client.send(
+        new DeleteObjectCommand({
+          Bucket: bucket,
+          Key: key,
+        })
+      );
+    }
+  } while (continuationToken);
 }
 
 /** GET /api/projects/:id - Get single project */
@@ -156,7 +200,12 @@ export async function DELETE(
 
   try {
     const rows = await db
-      .select({ s3Key: projects.s3Key, clips: projects.clips })
+      .select({
+        s3Key: projects.s3Key,
+        clips: projects.clips,
+        exportRenderId: projects.exportRenderId,
+        exportBucketName: projects.exportBucketName,
+      })
       .from(projects)
       .where(
         and(
@@ -186,7 +235,12 @@ export async function DELETE(
 
     // Fetch clip IDs before deleting (for frontend cleanup)
     const clipRows = await db
-      .select({ id: projects.id, s3Key: projects.s3Key })
+      .select({
+        id: projects.id,
+        s3Key: projects.s3Key,
+        exportRenderId: projects.exportRenderId,
+        exportBucketName: projects.exportBucketName,
+      })
       .from(projects)
       .where(
         and(
@@ -200,6 +254,22 @@ export async function DELETE(
       if (cr.s3Key && cr.s3Key.startsWith('uploads/')) {
         keysToDelete.add(cr.s3Key);
       }
+    }
+
+    const rendersToDelete: Array<{ bucket: string; renderId: string }> = [];
+    const renderDedupe = new Set<string>();
+
+    const pushRender = (bucket: string | null | undefined, renderId: string | null | undefined) => {
+      if (!renderId || !bucket) return;
+      const k = `${bucket}\0${renderId}`;
+      if (renderDedupe.has(k)) return;
+      renderDedupe.add(k);
+      rendersToDelete.push({ bucket, renderId });
+    };
+
+    pushRender(rows[0].exportBucketName, rows[0].exportRenderId);
+    for (const clipRow of clipRows) {
+      pushRender(clipRow.exportBucketName, clipRow.exportRenderId);
     }
 
     // Delete associated clips first (projects with this as parentProjectId)
@@ -227,6 +297,17 @@ export async function DELETE(
         await deleteS3Object(key);
       } catch (s3Err) {
         console.error('Failed to delete S3 object:', key, s3Err);
+      }
+    }
+
+    for (const render of rendersToDelete) {
+      try {
+        await deleteRenderFolder(render.bucket, render.renderId);
+      } catch (s3Err) {
+        console.error(
+          `Failed to delete render folder: renders/${render.renderId}/ in ${render.bucket}`,
+          s3Err
+        );
       }
     }
 

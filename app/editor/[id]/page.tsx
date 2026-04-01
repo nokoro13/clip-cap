@@ -92,6 +92,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import { toast } from "@/hooks/use-toast";
 
 const FPS = 30;
 
@@ -1460,6 +1461,8 @@ export default function EditorPage() {
     "" | "styling" | "subtitles" | "text" | "banners" | "timeline"
   >("styling");
   const apiSavePayloadRef = useRef<Record<string, unknown> | null>(null);
+  /** True after GET /api/projects/:id succeeded for this clip (row exists in DB). */
+  const editorRowExistsInDbRef = useRef(false);
   /** Last saved / hydrated digest; null until first persist effect after load establishes baseline. */
   const savedPayloadDigestBaselineRef = useRef<string | null>(null);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
@@ -1638,6 +1641,7 @@ export default function EditorPage() {
       try {
         const apiRes = await fetch(`/api/projects/${projectId}`);
         if (apiRes.ok) {
+          editorRowExistsInDbRef.current = true;
           const apiProject = await apiRes.json();
           const projectFromApi: Record<string, unknown> = {
             captions: apiProject.captions,
@@ -2019,9 +2023,12 @@ export default function EditorPage() {
               const downloadUrl = `/api/download/export?renderId=${encodeURIComponent(renderId)}&bucket=${encodeURIComponent(bucketName)}`;
               setExportDownloadUrl(downloadUrl);
             }
-            alert(
-              "Video exported! Use the button in the header to save your video (on iPhone: Save clip → Save to Files)."
-            );
+            toast({
+              variant: "success",
+              title: "Video exported",
+              description:
+                "Download now.",
+            });
           }
           if (progress.fatalErrorEncountered) {
             throw new Error("Render failed: " + JSON.stringify(progress.errors));
@@ -2030,7 +2037,11 @@ export default function EditorPage() {
       } catch (err) {
         if (!cancelled) {
           console.error("Resume export error:", err);
-          alert(err instanceof Error ? err.message : "Export failed");
+          toast({
+            variant: "destructive",
+            title: "Export failed",
+            description: err instanceof Error ? err.message : "Export failed",
+          });
         }
       } finally {
         if (!cancelled) {
@@ -2119,6 +2130,7 @@ export default function EditorPage() {
   useLayoutEffect(() => {
     setIsLoading(true);
     savedPayloadDigestBaselineRef.current = null;
+    editorRowExistsInDbRef.current = false;
   }, [params.id]);
 
   useLayoutEffect(() => {
@@ -2292,6 +2304,7 @@ export default function EditorPage() {
           body: JSON.stringify(payload),
         });
         if (res.ok) {
+          editorRowExistsInDbRef.current = true;
           const digest = persistPayloadDigest({
             title: payload.title,
             duration: payload.duration,
@@ -2307,13 +2320,19 @@ export default function EditorPage() {
           router.push(backHref);
         } else {
           const detail = await res.text().catch(() => "");
-          alert(
-            `Could not save your changes (${res.status}). ${detail ? `${detail.slice(0, 200)}…` : "Please try again."}`
-          );
+          toast({
+            variant: "destructive",
+            title: "Could not save",
+            description: `${res.status}${detail ? ` — ${detail.slice(0, 200)}` : ""}. Please try again.`,
+          });
         }
       } catch (err) {
         console.error("Failed to save before exit:", err);
-        alert("Could not save your changes. Check your connection and try again.");
+        toast({
+          variant: "destructive",
+          title: "Could not save",
+          description: "Check your connection and try again.",
+        });
       }
     } else {
       setShowSaveDialog(false);
@@ -2731,11 +2750,58 @@ export default function EditorPage() {
 
   const handleExport = useCallback(async () => {
     if (!videoUrl) {
-      alert("No video loaded");
+      toast({
+        variant: "destructive",
+        title: "No video",
+        description: "Load a video before exporting.",
+      });
       return;
     }
 
     const projectId = params.id as string;
+
+    // Ensure editor row exists so export metadata (render id / bucket) can be stored (bulk clips).
+    const payload = apiSavePayloadRef.current;
+    const needsPersistBeforeExport =
+      !!payload &&
+      (hasUnsavedChanges || !editorRowExistsInDbRef.current);
+    if (needsPersistBeforeExport) {
+      try {
+        const saveRes = await fetch("/api/projects", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        if (!saveRes.ok) {
+          toast({
+            variant: "destructive",
+            title: "Save required",
+            description: "Could not save before export. Save manually and try again.",
+          });
+          return;
+        }
+        editorRowExistsInDbRef.current = true;
+        const digest = persistPayloadDigest({
+          title: payload.title,
+          duration: payload.duration,
+          videoUrl: payload.videoUrl,
+          parentProjectId: payload.parentProjectId,
+          captions: payload.captions,
+          segmentCaptions: payload.segmentCaptions,
+          editorState: payload.editorState,
+        });
+        savedPayloadDigestBaselineRef.current = digest;
+        setHasUnsavedChanges(false);
+      } catch (err) {
+        console.error("Failed to auto-save before export:", err);
+        toast({
+          variant: "destructive",
+          title: "Save failed",
+          description: "Could not save before export. Please try again.",
+        });
+        return;
+      }
+    }
 
     // One export per user - block if another project is exporting
     const activeRes = await fetch("/api/export/active");
@@ -2744,7 +2810,11 @@ export default function EditorPage() {
         activeExportProjectId: string | null;
       };
       if (activeExportProjectId && activeExportProjectId !== projectId) {
-        alert("Another export is already in progress. Please wait for it to complete.");
+        toast({
+          variant: "destructive",
+          title: "Export in progress",
+          description: "Another export is already running. Wait for it to finish.",
+        });
         return;
       }
     }
@@ -2860,9 +2930,12 @@ export default function EditorPage() {
             const downloadUrl = `/api/download/export?renderId=${encodeURIComponent(renderId)}&bucket=${encodeURIComponent(bucketName)}`;
             setExportDownloadUrl(downloadUrl);
           }
-          alert(
-            "Video exported! Use the button in the header to save your video (on iPhone: Save clip → Save to Files)."
-          );
+          toast({
+            variant: "success",
+            title: "Video exported",
+            description:
+              "Download now.",
+          });
         }
 
         if (progress.fatalErrorEncountered) {
@@ -2871,7 +2944,11 @@ export default function EditorPage() {
       }
     } catch (error) {
       console.error("Export error:", error);
-      alert(error instanceof Error ? error.message : "Export failed");
+      toast({
+        variant: "destructive",
+        title: "Export failed",
+        description: error instanceof Error ? error.message : "Export failed",
+      });
     } finally {
       setIsExporting(false);
       setExportProgress(null);
@@ -2880,6 +2957,7 @@ export default function EditorPage() {
   }, [
     params.id,
     videoUrl,
+    hasUnsavedChanges,
     sourceProjectId,
     subtitles,
     style,
@@ -2902,7 +2980,11 @@ export default function EditorPage() {
     try {
       const result = await saveExportedClipVideo(exportDownloadUrl);
       if (!result.ok) {
-        alert(result.message);
+        toast({
+          variant: "destructive",
+          title: "Download",
+          description: result.message,
+        });
       }
     } finally {
       setExportDownloadPreparing(false);
@@ -4994,8 +5076,7 @@ export default function EditorPage() {
                           variant="outline"
                           className="flex flex-col items-start p-4 h-auto text-left"
                           onClick={() => {
-                            const frame =
-                              playerRef.current?.getCurrentFrame() ?? 0;
+                            const end = Math.max(1, compositionDuration);
                             const newTrack: BannerTrack = {
                               id: `banner-track-${Date.now()}`,
                               name: preset.name,
@@ -5007,14 +5088,8 @@ export default function EditorPage() {
                               trackId: newTrack.id,
                               logoUrl: preset.logoUrl,
                               text: preset.text,
-                              startFrame: Math.min(
-                                frame,
-                                compositionDuration - 60
-                              ),
-                              endFrame: Math.min(
-                                frame + 90,
-                                compositionDuration
-                              ),
+                              startFrame: 0,
+                              endFrame: end,
                               style: { ...preset.style },
                             };
                             setBannerTracks((prev) => [...prev, newTrack]);
@@ -5023,7 +5098,7 @@ export default function EditorPage() {
                               newSegment,
                             ]);
                             setSelectedBannerSegment(newSegment.id);
-                            playerRef.current?.seekTo(newSegment.startFrame);
+                            playerRef.current?.seekTo(0);
                           }}
                         >
                           <span className="font-semibold flex flex-row w-full items-center justify-between gap-1">{preset.name}{preset.logoUrl ? <img src={preset.logoUrl} alt="" className="w-6 h-6 object-contain rounded shrink-0" /> : null}</span>
@@ -5116,22 +5191,14 @@ export default function EditorPage() {
                                     className="w-full justify-start h-auto py-2 px-2 text-left"
                                     onClick={() => {
                                       setBannerPresetPopoverTrackId(null);
-                                      const frame =
-                                        playerRef.current?.getCurrentFrame() ??
-                                        0;
+                                      const end = Math.max(1, compositionDuration);
                                       const newSegment: BannerSegment = {
                                         id: `banner-seg-${Date.now()}`,
                                         trackId: track.id,
                                         logoUrl: preset.logoUrl,
                                         text: preset.text,
-                                        startFrame: Math.min(
-                                          frame,
-                                          compositionDuration - 60
-                                        ),
-                                        endFrame: Math.min(
-                                          frame + 90,
-                                          compositionDuration
-                                        ),
+                                        startFrame: 0,
+                                        endFrame: end,
                                         style: { ...preset.style },
                                       };
                                       setBannerSegments((prev) => [
@@ -5139,9 +5206,7 @@ export default function EditorPage() {
                                         newSegment,
                                       ]);
                                       setSelectedBannerSegment(newSegment.id);
-                                      playerRef.current?.seekTo(
-                                        newSegment.startFrame
-                                      );
+                                      playerRef.current?.seekTo(0);
                                       setCollapsedBannerTrackIds((prev) => {
                                         const next = new Set(prev);
                                         next.delete(track.id);
@@ -7381,8 +7446,7 @@ export default function EditorPage() {
                           variant="outline"
                           className="flex flex-col items-start p-4 h-auto text-left"
                           onClick={() => {
-                            const frame =
-                              playerRef.current?.getCurrentFrame() ?? 0;
+                            const end = Math.max(1, compositionDuration);
                             const newTrack: BannerTrack = {
                               id: `banner-track-${Date.now()}`,
                               name: preset.name,
@@ -7394,14 +7458,8 @@ export default function EditorPage() {
                               trackId: newTrack.id,
                               logoUrl: preset.logoUrl,
                               text: preset.text,
-                              startFrame: Math.min(
-                                frame,
-                                compositionDuration - 60
-                              ),
-                              endFrame: Math.min(
-                                frame + 90,
-                                compositionDuration
-                              ),
+                              startFrame: 0,
+                              endFrame: end,
                               style: { ...preset.style },
                             };
                             setBannerTracks((prev) => [...prev, newTrack]);
@@ -7410,7 +7468,7 @@ export default function EditorPage() {
                               newSegment,
                             ]);
                             setSelectedBannerSegment(newSegment.id);
-                            playerRef.current?.seekTo(newSegment.startFrame);
+                            playerRef.current?.seekTo(0);
                           }}
                         >
                           <span className="font-semibold flex flex-row w-full items-center justify-between gap-1">{preset.name}{preset.logoUrl ? <img src={preset.logoUrl} alt="" className="w-6 h-6 object-contain rounded shrink-0" /> : null}</span>
@@ -7503,22 +7561,14 @@ export default function EditorPage() {
                                     className="w-full justify-start h-auto py-2 px-2 text-left"
                                     onClick={() => {
                                       setBannerPresetPopoverTrackId(null);
-                                      const frame =
-                                        playerRef.current?.getCurrentFrame() ??
-                                        0;
+                                      const end = Math.max(1, compositionDuration);
                                       const newSegment: BannerSegment = {
                                         id: `banner-seg-${Date.now()}`,
                                         trackId: track.id,
                                         logoUrl: preset.logoUrl,
                                         text: preset.text,
-                                        startFrame: Math.min(
-                                          frame,
-                                          compositionDuration - 60
-                                        ),
-                                        endFrame: Math.min(
-                                          frame + 90,
-                                          compositionDuration
-                                        ),
+                                        startFrame: 0,
+                                        endFrame: end,
                                         style: { ...preset.style },
                                       };
                                       setBannerSegments((prev) => [
@@ -7526,9 +7576,7 @@ export default function EditorPage() {
                                         newSegment,
                                       ]);
                                       setSelectedBannerSegment(newSegment.id);
-                                      playerRef.current?.seekTo(
-                                        newSegment.startFrame
-                                      );
+                                      playerRef.current?.seekTo(0);
                                       setCollapsedBannerTrackIds((prev) => {
                                         const next = new Set(prev);
                                         next.delete(track.id);

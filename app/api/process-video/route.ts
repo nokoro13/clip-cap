@@ -7,6 +7,10 @@ import { getYouTubeInfoFromYtDlp } from '@/lib/yt-dlp';
 import { parseYouTubeUrl } from '@/lib/video-utils';
 import { whopsdk } from '@/lib/whop-sdk';
 import { canUpload, incrementUsage } from '@/lib/user-service';
+import {
+  BULK_GENERATE_MAX_DURATION_SEC,
+  describeMaxVideoDuration,
+} from '@/lib/video-upload-limits';
 
 export const runtime = 'nodejs';
 export const maxDuration = 300;
@@ -63,6 +67,19 @@ export async function POST(request: NextRequest) {
               'Unable to extract video from YouTube. This video may have restrictions or be unavailable. Try a different video or upload a file directly.',
           },
           { status: 422 }
+        );
+      }
+
+      if (
+        typeof video.duration === 'number' &&
+        Number.isFinite(video.duration) &&
+        video.duration > BULK_GENERATE_MAX_DURATION_SEC + 0.5
+      ) {
+        return NextResponse.json(
+          {
+            error: `This YouTube video is too long. Maximum length is ${describeMaxVideoDuration(BULK_GENERATE_MAX_DURATION_SEC)}.`,
+          },
+          { status: 400 }
         );
       }
 

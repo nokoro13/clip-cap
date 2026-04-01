@@ -17,6 +17,7 @@ import {
   TrendingUp,
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { toast } from '@/hooks/use-toast';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import {
   Card,
@@ -505,7 +506,11 @@ export default function ProjectGalleryPage() {
 
     const playUrl = clip.videoUrl || videoUrl;
     if (!playUrl) {
-      alert('Video not available. Please re-upload the video.');
+      toast({
+        variant: 'destructive',
+        title: 'Video unavailable',
+        description: 'Re-upload the video and try again.',
+      });
       return;
     }
 

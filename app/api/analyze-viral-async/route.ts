@@ -11,6 +11,11 @@ import { analyzeViralFromInput } from '@/lib/analyze-viral';
 import { extractAndUploadBulkClips } from '@/lib/bulk-clip-s3';
 import { getFileForWhisper } from '@/lib/extract-audio';
 import { canUpload, incrementUsage } from '@/lib/user-service';
+import { ffprobeDurationSeconds } from '@/lib/media-duration-ffprobe';
+import {
+  BULK_GENERATE_MAX_DURATION_SEC,
+  describeMaxVideoDuration,
+} from '@/lib/video-upload-limits';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30; // Short - we return immediately, background runs separately
@@ -94,6 +99,13 @@ async function runAnalysisInBackground(
     );
     fs.writeFileSync(fullVideoPath, buffer);
     await setProjectProgress(projectId, userId, experienceId, 34);
+
+    const probeDur = await ffprobeDurationSeconds(fullVideoPath);
+    if (probeDur > BULK_GENERATE_MAX_DURATION_SEC + 0.5) {
+      throw new Error(
+        `Video exceeds Bulk Generate limit of ${describeMaxVideoDuration(BULK_GENERATE_MAX_DURATION_SEC)}.`
+      );
+    }
 
     const file = new File([buffer], `video.${ext}`, { type: contentType });
 

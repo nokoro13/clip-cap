@@ -20,6 +20,7 @@ import {
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
 import { deleteVideoBlob } from '@/lib/delete-project';
+import { toast } from '@/hooks/use-toast';
 
 interface RecentProjectsGalleryProps {
   experienceId: string;
@@ -84,7 +85,12 @@ export function RecentProjectsGallery({ experienceId, className }: RecentProject
       await refresh();
     } catch (error) {
       console.error('Failed to delete project:', error);
-      alert(error instanceof Error ? error.message : 'Failed to delete project. Please try again.');
+      toast({
+        variant: 'destructive',
+        title: 'Could not delete',
+        description:
+          error instanceof Error ? error.message : 'Failed to delete project. Please try again.',
+      });
     } finally {
       setDeletingId(null);
     }

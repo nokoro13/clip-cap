@@ -8,6 +8,11 @@ import {
 } from '@/lib/whisper-chunked';
 import { whopsdk } from '@/lib/whop-sdk';
 import { canUpload, incrementUsage } from '@/lib/user-service';
+import { getMediaDurationSecondsFromFile } from '@/lib/media-duration-ffprobe';
+import {
+  describeMaxVideoDuration,
+  GENERATE_SUBTITLES_MAX_DURATION_SEC,
+} from '@/lib/video-upload-limits';
 
 export const runtime = 'nodejs';
 /** Chunked Whisper for long audio can exceed 60s (several API calls). */
@@ -56,6 +61,24 @@ export async function POST(request: NextRequest) {
     if (!validTypes.some((type) => file.type.startsWith(type.split('/')[0]))) {
       return NextResponse.json(
         { error: 'Invalid file type. Please upload a video or audio file.' },
+        { status: 400 }
+      );
+    }
+
+    let mediaDurationSec: number;
+    try {
+      mediaDurationSec = await getMediaDurationSecondsFromFile(file);
+    } catch {
+      return NextResponse.json(
+        { error: 'Could not read media duration. Try another file or format.' },
+        { status: 400 }
+      );
+    }
+    if (mediaDurationSec > GENERATE_SUBTITLES_MAX_DURATION_SEC + 0.5) {
+      return NextResponse.json(
+        {
+          error: `Video is too long for Generate Subtitles. Maximum length is ${describeMaxVideoDuration(GENERATE_SUBTITLES_MAX_DURATION_SEC)}.`,
+        },
         { status: 400 }
       );
     }

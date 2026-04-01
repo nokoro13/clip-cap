@@ -13,6 +13,7 @@ import { notifyProjectIndexUpdate } from '@/lib/project-index';
 import { saveProjectToApi } from '@/lib/project-api';
 import { saveVideoBlob } from '@/lib/video-storage';
 import { uploadVideoToS3 } from '@/lib/upload-video-s3';
+import { toast } from '@/hooks/use-toast';
 
 const DEFAULT_BASIC_CHECKOUT_URL = 'https://whop.com/checkout/plan_xtThkvdruzGaa';
 const DEFAULT_PREMIUM_CHECKOUT_URL = 'https://whop.com/checkout/plan_OHjnjQ68gcbct';
@@ -100,9 +101,12 @@ export function QuickStartCards({
       if (usageStats.accessLevel === 'basic') {
         openLimitDialog('upgrade_to_premium');
       } else {
-        alert(
-          'You have used all Premium subtitle uploads for this month. Limits reset when your billing period rolls.'
-        );
+        toast({
+          variant: 'destructive',
+          title: 'Upload limit',
+          description:
+            'You have used all Premium subtitle uploads for this month. Limits reset when your billing period rolls.',
+        });
       }
       return;
     }
@@ -143,7 +147,11 @@ export function QuickStartCards({
           if (error.requiresUpgrade) {
             openLimitDialog('upgrade_to_premium');
           } else {
-            alert(error.error || 'Upload limit reached');
+            toast({
+              variant: 'destructive',
+              title: 'Limit reached',
+              description: error.error || 'Upload limit reached',
+            });
           }
           progressUpdater.stop();
           await saveProjectToApi(experienceId, {
@@ -208,7 +216,11 @@ export function QuickStartCards({
         status: 'error',
         progress: 0,
       }).catch(() => {});
-      alert(error instanceof Error ? error.message : 'Failed to process video');
+      toast({
+        variant: 'destructive',
+        title: 'Processing failed',
+        description: error instanceof Error ? error.message : 'Failed to process video',
+      });
     }
   };
 
@@ -223,9 +235,12 @@ export function QuickStartCards({
       usageStats.accessLevel === 'premium' &&
       usageStats.bulkGenerate.used >= usageStats.bulkGenerate.limit
     ) {
-      alert(
-        'You have used all bulk uploads for this month. Limits reset when your billing period rolls.'
-      );
+      toast({
+        variant: 'destructive',
+        title: 'Upload limit',
+        description:
+          'You have used all bulk uploads for this month. Limits reset when your billing period rolls.',
+      });
         return;
     }
 
@@ -305,7 +320,11 @@ export function QuickStartCards({
           if (errData.requiresUpgrade) {
             openLimitDialog('upgrade_to_premium');
           } else {
-            alert(errData.error || 'Upload limit reached');
+            toast({
+              variant: 'destructive',
+              title: 'Limit reached',
+              description: errData.error || 'Upload limit reached',
+            });
           }
           await saveProjectToApi(experienceId, {
             id: projectId,
@@ -346,7 +365,11 @@ export function QuickStartCards({
         status: 'error',
         progress: 0,
       }).catch(() => {});
-      alert(error instanceof Error ? error.message : 'Failed to analyze video');
+      toast({
+        variant: 'destructive',
+        title: 'Analysis failed',
+        description: error instanceof Error ? error.message : 'Failed to analyze video',
+      });
     }
   };
 
@@ -361,9 +384,12 @@ export function QuickStartCards({
       usageStats.accessLevel === 'premium' &&
       usageStats.bulkGenerate.used >= usageStats.bulkGenerate.limit
     ) {
-      alert(
-        'You have used all bulk uploads for this month. Limits reset when your billing period rolls.'
-      );
+      toast({
+        variant: 'destructive',
+        title: 'Upload limit',
+        description:
+          'You have used all bulk uploads for this month. Limits reset when your billing period rolls.',
+      });
       return;
     }
 
@@ -405,7 +431,11 @@ export function QuickStartCards({
           if (data.requiresUpgrade) {
             openLimitDialog('upgrade_to_premium');
           } else {
-            alert(data.error || 'Upload limit reached');
+            toast({
+              variant: 'destructive',
+              title: 'Limit reached',
+              description: data.error || 'Upload limit reached',
+            });
           }
           progressUpdater.stop();
           await saveProjectToApi(experienceId, {
@@ -473,13 +503,20 @@ export function QuickStartCards({
         status: 'error',
         progress: 0,
       }).catch(() => {});
-      alert(error instanceof Error ? error.message : 'Failed to process video');
+      toast({
+        variant: 'destructive',
+        title: 'Processing failed',
+        description: error instanceof Error ? error.message : 'Failed to process video',
+      });
     }
   };
 
   const handleGoogleDriveImport = () => {
     // TODO: Implement Google Drive import
-    alert('Google Drive import coming soon!');
+    toast({
+      title: 'Coming soon',
+      description: 'Google Drive import is not available yet.',
+    });
   };
 
   const handleSampleVideoSelect = () => {
@@ -539,7 +576,7 @@ export function QuickStartCards({
         <SimpleUploadDialog
           onVideoSelect={handleSingleVideoSelect}
           title="Generate Subtitles"
-          description="MP4 or MOV, Max size: 500MB (audio extracted for transcription)"
+          description="MP4 or MOV, max 5 minutes, max size 500MB (audio extracted for transcription)"
           subscriptionGate={subscriptionGate}
           trigger={
             <button type="button" className="h-full w-full text-left">

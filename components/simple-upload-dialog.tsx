@@ -12,12 +12,20 @@ import {
 import { Button } from '@/components/ui/button';
 import { SubscribeDialog, type SubscribeIntent } from '@/components/subscribe-dialog';
 import { cn } from '@/lib/utils';
+import { probeVideoFileDurationSeconds } from '@/lib/get-video-duration-browser';
+import {
+  describeMaxVideoDuration,
+  GENERATE_SUBTITLES_MAX_DURATION_SEC,
+} from '@/lib/video-upload-limits';
+import { toast } from '@/hooks/use-toast';
 
 interface SimpleUploadDialogProps {
   onVideoSelect?: (file: File) => void;
   trigger?: React.ReactNode;
   title?: string;
   description?: string;
+  /** Reject files longer than this many seconds (inclusive limit). */
+  maxDurationSeconds?: number;
   /** When set, the drop zone is replaced with a subscribe CTA that opens the tier dialog. */
   subscriptionGate?: {
     basicCheckoutUrl: string;
@@ -30,9 +38,13 @@ export function SimpleUploadDialog({
   onVideoSelect,
   trigger,
   title = 'Upload Video',
-  description = 'MP4 or MOV, Max duration: 120 min, Max size: 10GB',
+  description,
+  maxDurationSeconds = GENERATE_SUBTITLES_MAX_DURATION_SEC,
   subscriptionGate,
 }: SimpleUploadDialogProps) {
+  const resolvedDescription =
+    description ??
+    `MP4 or MOV, max ${describeMaxVideoDuration(maxDurationSeconds)}, max size 10GB`;
   const [open, setOpen] = useState(false);
   const [isDragging, setIsDragging] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -50,6 +62,34 @@ export function SimpleUploadDialog({
     setIsDragging(false);
   }, []);
 
+  const acceptFile = useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith('video/')) return;
+      if (maxDurationSeconds > 0) {
+        const seconds = await probeVideoFileDurationSeconds(file);
+        if (seconds == null) {
+          toast({
+            variant: 'destructive',
+            title: 'Could not read video',
+            description: 'Try another file or format.',
+          });
+          return;
+        }
+        if (seconds > maxDurationSeconds + 0.5) {
+          toast({
+            variant: 'destructive',
+            title: 'Video too long',
+            description: `Maximum length is ${describeMaxVideoDuration(maxDurationSeconds)} (${Math.ceil(seconds / 60)} min detected).`,
+          });
+          return;
+        }
+      }
+      onVideoSelect?.(file);
+      setOpen(false);
+    },
+    [onVideoSelect, maxDurationSeconds]
+  );
+
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -58,25 +98,21 @@ export function SimpleUploadDialog({
 
       const files = e.dataTransfer.files;
       if (files.length > 0) {
-        const file = files[0];
-        if (file.type.startsWith('video/')) {
-          onVideoSelect?.(file);
-          setOpen(false);
-        }
+        void acceptFile(files[0]);
       }
     },
-    [onVideoSelect]
+    [acceptFile]
   );
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files && files.length > 0) {
-        onVideoSelect?.(files[0]);
-        setOpen(false);
+        void acceptFile(files[0]);
       }
+      e.target.value = '';
     },
-    [onVideoSelect]
+    [acceptFile]
   );
 
   const handleBrowseClick = useCallback(() => {
@@ -144,7 +180,7 @@ export function SimpleUploadDialog({
                       browse your video
                     </button>
                   </p>
-                  <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{resolvedDescription}</p>
                 </div>
               </div>
 

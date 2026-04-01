@@ -12,6 +12,12 @@ import {
 import { Button } from '@/components/ui/button';
 import { SubscribeDialog, type SubscribeIntent } from '@/components/subscribe-dialog';
 import { cn } from '@/lib/utils';
+import { probeVideoFileDurationSeconds } from '@/lib/get-video-duration-browser';
+import {
+  BULK_GENERATE_MAX_DURATION_SEC,
+  describeMaxVideoDuration,
+} from '@/lib/video-upload-limits';
+import { toast } from '@/hooks/use-toast';
 
 export const CLIP_TOPICS = [
   { id: 'auto', label: 'Auto' },
@@ -37,6 +43,8 @@ interface VideoUploadDialogProps {
     premiumCheckoutUrl: string;
     intent?: SubscribeIntent;
   };
+  /** Reject file uploads longer than this (seconds). YouTube is validated on the server. */
+  maxDurationSeconds?: number;
 }
 
 const MAX_TOPICS = 3;
@@ -48,6 +56,7 @@ export function VideoUploadDialog({
   onSampleVideoSelect,
   trigger,
   subscriptionGate,
+  maxDurationSeconds = BULK_GENERATE_MAX_DURATION_SEC,
 }: VideoUploadDialogProps) {
   const [open, setOpen] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
@@ -87,6 +96,34 @@ export function VideoUploadDialog({
     setIsDragging(false);
   }, []);
 
+  const acceptVideoFile = useCallback(
+    async (file: File) => {
+      if (!file.type.startsWith('video/')) return;
+      if (maxDurationSeconds > 0) {
+        const seconds = await probeVideoFileDurationSeconds(file);
+        if (seconds == null) {
+          toast({
+            variant: 'destructive',
+            title: 'Could not read video',
+            description: 'Try another file or format.',
+          });
+          return;
+        }
+        if (seconds > maxDurationSeconds + 0.5) {
+          toast({
+            variant: 'destructive',
+            title: 'Video too long',
+            description: `Maximum for Bulk Generate is ${describeMaxVideoDuration(maxDurationSeconds)} (${Math.ceil(seconds / 60)} min detected).`,
+          });
+          return;
+        }
+      }
+      onVideoSelect?.(file, getTopicsForApi());
+      setOpen(false);
+    },
+    [onVideoSelect, getTopicsForApi, maxDurationSeconds]
+  );
+
   const handleDrop = useCallback(
     (e: React.DragEvent) => {
       e.preventDefault();
@@ -95,25 +132,21 @@ export function VideoUploadDialog({
 
       const files = e.dataTransfer.files;
       if (files.length > 0) {
-        const file = files[0];
-        if (file.type.startsWith('video/')) {
-          onVideoSelect?.(file, getTopicsForApi());
-          setOpen(false);
-        }
+        void acceptVideoFile(files[0]);
       }
     },
-    [onVideoSelect, getTopicsForApi]
+    [acceptVideoFile]
   );
 
   const handleFileSelect = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const files = e.target.files;
       if (files && files.length > 0) {
-        onVideoSelect?.(files[0], getTopicsForApi());
-        setOpen(false);
+        void acceptVideoFile(files[0]);
       }
+      e.target.value = '';
     },
-    [onVideoSelect, getTopicsForApi]
+    [acceptVideoFile]
   );
 
   const handleYoutubeSubmit = useCallback(() => {
@@ -236,7 +269,8 @@ export function VideoUploadDialog({
                     </button>
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    MP4 or MOV, Max duration: 120 min Max size: 10GB
+                    MP4 or MOV, max {describeMaxVideoDuration(maxDurationSeconds)} per file
+                    (YouTube max {describeMaxVideoDuration(maxDurationSeconds)}), max size 10GB
                   </p>
                 </div>
               </div>
