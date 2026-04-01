@@ -2,6 +2,10 @@ import { NextResponse } from 'next/server';
 import { headers } from 'next/headers';
 import { eq, and } from 'drizzle-orm';
 import { renderMediaOnLambda } from '@remotion/lambda/client';
+import {
+  calculateDurationFromSegments,
+  calculateFramesPerLambda,
+} from '@/lib/lambda-concurrency';
 import { whopsdk } from '@/lib/whop-sdk';
 import { db } from '@/lib/db';
 import { projects } from '@/lib/db/schema';
@@ -64,6 +68,12 @@ export async function POST(request: Request) {
       );
     }
 
+    const durationInFrames = calculateDurationFromSegments(videoSegments);
+    const optimalFramesPerLambda = calculateFramesPerLambda(durationInFrames);
+    console.log(
+      `[Lambda Render] durationInFrames=${durationInFrames} framesPerLambda=${optimalFramesPerLambda}`
+    );
+
     const existingExport = await db
       .select({ id: projects.id })
       .from(projects)
@@ -110,7 +120,7 @@ export async function POST(request: Request) {
       codec: 'h264',
       imageFormat: 'jpeg',
       maxRetries: 1,
-      framesPerLambda: 500,
+      framesPerLambda: optimalFramesPerLambda,
       privacy: 'public',
       overwrite: true,
     });

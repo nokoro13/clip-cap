@@ -8092,7 +8092,7 @@ export default function EditorPage() {
         {/* Center - Video Preview */}
         <main className="flex min-h-0 flex-1 flex-col min-w-0 items-center justify-center bg-black/20 dark:bg-white/20 sm:flex-2 transition-[height] duration-300 ease-out sm:transition-none">
           <div
-            className="h-full max-h-full max-w-full mx-4 mt-4 sm:m-4 transition-[width,height] duration-300 ease-out sm:transition-none"
+            className="h-full max-h-full max-w-full m-4 transition-[width,height] duration-300 ease-out sm:transition-none"
             style={{ aspectRatio: "9 / 16" }}
           >
             <Player
