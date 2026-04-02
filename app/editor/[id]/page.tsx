@@ -105,6 +105,7 @@ import {
   type SavedSubtitlePresetRecord,
   type SubtitlePresetForApply,
 } from "@/lib/user-subtitle-presets";
+import { SubtitlePresetPreviewChip } from "@/components/subtitle-preset-preview";
 
 const FPS = 30;
 
@@ -383,8 +384,8 @@ const PRESET_STYLES: {
 }[] = [
   {
     id: "clean",
-    name: "Clean",
-    preview: { bg: "transparent", color: "#fff" },
+    name: "One",
+    preview: { bg: "#ea4453", color: "#fff" },
     style: {
       fontFamily: "Montserrat",
       fontSize: 52,
@@ -416,7 +417,7 @@ const PRESET_STYLES: {
   },
   {
     id: "bangers",
-    name: "Bangers",
+    name: "Two",
     preview: { bg: "transparent", color: "#fff", stroke: "#000" },
     style: {
       fontFamily: "Bangers",
@@ -449,7 +450,7 @@ const PRESET_STYLES: {
   },
   {
     id: "boxed",
-    name: "Boxed",
+    name: "Three",
     preview: { bg: "#000", color: "#fff" },
     style: {
       fontFamily: "Anton",
@@ -480,7 +481,7 @@ const PRESET_STYLES: {
   },
   {
     id: "classic",
-    name: "Classic",
+    name: "Four",
     preview: { bg: "#facc15", color: "#000" },
     style: {
       fontFamily: "Montserrat",
@@ -513,7 +514,7 @@ const PRESET_STYLES: {
   },
   {
     id: "neon",
-    name: "Neon",
+    name: "Five",
     preview: { bg: "transparent", color: "#0ff" },
     style: {
       fontFamily: "Montserrat",
@@ -546,7 +547,7 @@ const PRESET_STYLES: {
   },
   {
     id: "bold-red",
-    name: "Bold",
+    name: "Six",
     preview: { bg: "#ef4444", color: "#fff" },
     style: {
 		fontFamily: "Poppins",
@@ -579,7 +580,7 @@ const PRESET_STYLES: {
   },
   {
     id: "youtube",
-    name: "YouTube",
+    name: "Seven",
     preview: { bg: "#1a1a1a", color: "#facc15" },
     style: {
       fontFamily: "Montserrat",
@@ -612,7 +613,7 @@ const PRESET_STYLES: {
   },
   {
     id: "minimal",
-    name: "Minimal",
+    name: "Eight",
     preview: { bg: "transparent", color: "#fff" },
     style: {
       fontFamily: "Righteous",
@@ -645,7 +646,7 @@ const PRESET_STYLES: {
   },
   {
     id: "punchy",
-    name: "Punchy",
+    name: "Nine",
     preview: { bg: "transparent", color: "#fff", stroke: "#000" },
     style: {
       fontFamily: "Anton",
@@ -678,7 +679,7 @@ const PRESET_STYLES: {
   },
   {
     id: "high-contrast",
-    name: "High Contrast",
+    name: "Ten",
     preview: { bg: "#000", color: "#fff" },
     style: {
       fontFamily: "Montserrat",
@@ -711,7 +712,7 @@ const PRESET_STYLES: {
   },
   {
     id: "soft-glow",
-    name: "Soft Glow",
+    name: "Eleven",
     preview: { bg: "transparent", color: "#fbbf24" },
 	 style: {
       fontFamily: "Poppins",
@@ -744,7 +745,7 @@ const PRESET_STYLES: {
   },
   {
     id: "lower-third",
-    name: "Lower Third",
+    name: "Twelve",
     preview: { bg: "#1e293b", color: "#f1f5f9" },
 	 style: {
       fontFamily: "Fraunces",
@@ -777,7 +778,7 @@ const PRESET_STYLES: {
   },
   {
     id: "elegant",
-    name: "Elegant",
+    name: "Thirteen",
     preview: { bg: "transparent", color: "#f8fafc" },
 	 style: {
       fontFamily: "Playfair Display",
@@ -810,7 +811,7 @@ const PRESET_STYLES: {
   },
   {
     id: "typewriter",
-    name: "Typewriter",
+    name: "Fourteen",
     preview: { bg: "transparent", color: "#10b981" },
     style: {
       fontFamily: "Courier Prime",
@@ -843,7 +844,7 @@ const PRESET_STYLES: {
   },
   {
     id: "instagram",
-    name: "Instagram",
+    name: "Fifteen",
     preview: { bg: "transparent", color: "#fff" },
     style: {
       fontFamily: "Montserrat",
@@ -876,7 +877,7 @@ const PRESET_STYLES: {
   },
   {
     id: "documentary",
-    name: "Documentary",
+    name: "Sixteen",
     preview: { bg: "#0c0c0c", color: "#e5e5e5" },
     style: {
       fontFamily: "Roboto",
@@ -909,7 +910,7 @@ const PRESET_STYLES: {
   },
   {
     id: "neon-pink",
-    name: "Neon Pink",
+    name: "Seventeen",
     preview: { bg: "transparent", color: "#ec4899" },
     style: {
       fontFamily: "Righteous",
@@ -942,7 +943,7 @@ const PRESET_STYLES: {
   },
   {
     id: "chalk",
-    name: "Chalk",
+    name: "Eighteen",
     preview: { bg: "transparent", color: "#fef3c7" },
     style: {
       fontFamily: "Caveat",
@@ -3823,18 +3824,10 @@ export default function EditorPage() {
                             variant="preset"
                             className="h-auto w-full p-4"
                           >
-                            <div
-                              className="rounded px-2 py-1 text-xs font-bold"
-                              style={{
-                                color: preset.preview.color,
-                                backgroundColor: preset.preview.bg,
-                                textShadow: preset.preview.stroke
-                                  ? `1px 1px 0 ${preset.preview.stroke}, -1px -1px 0 ${preset.preview.stroke}, 1px -1px 0 ${preset.preview.stroke}, -1px 1px 0 ${preset.preview.stroke}`
-                                  : "none",
-                              }}
-                            >
-                              {preset.name}
-                            </div>
+                            <SubtitlePresetPreviewChip
+                              preset={preset}
+                              label={preset.name}
+                            />
                           </Button>
                           {isUserSavedPresetId(preset.id) ? (
                             <Button
@@ -6244,18 +6237,10 @@ export default function EditorPage() {
                             variant="preset"
                             className="h-auto w-full p-6 pr-8"
                           >
-                            <div
-                              className="rounded px-2 py-1 text-xs font-bold"
-                              style={{
-                                color: preset.preview.color,
-                                backgroundColor: preset.preview.bg,
-                                textShadow: preset.preview.stroke
-                                  ? `1px 1px 0 ${preset.preview.stroke}, -1px -1px 0 ${preset.preview.stroke}, 1px -1px 0 ${preset.preview.stroke}, -1px 1px 0 ${preset.preview.stroke}`
-                                  : "none",
-                              }}
-                            >
-                              {preset.name}
-                            </div>
+                            <SubtitlePresetPreviewChip
+                              preset={preset}
+                              label={preset.name}
+                            />
                           </Button>
                           {isUserSavedPresetId(preset.id) ? (
                             <Button
