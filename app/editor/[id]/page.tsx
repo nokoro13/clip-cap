@@ -7,9 +7,10 @@ import {
   useCallback,
   useEffect,
   useLayoutEffect,
+  useMemo,
 } from "react";
 import { useSearchParams, useParams, useRouter } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen, ChartNoAxesGantt, Play, Pause, GripHorizontal } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen, ChartNoAxesGantt, Play, Pause, GripHorizontal, Trash2 } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
   SubtitleComposition,
@@ -94,6 +95,16 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { toast } from "@/hooks/use-toast";
+import {
+  loadUserSubtitlePresets,
+  migrateLocalSubtitlePresetsToServer,
+  previewFromSubtitleStyle,
+  savedRecordToApplyPresetShape,
+  MAX_USER_SUBTITLE_PRESETS,
+  isUserSavedPresetId,
+  type SavedSubtitlePresetRecord,
+  type SubtitlePresetForApply,
+} from "@/lib/user-subtitle-presets";
 
 const FPS = 30;
 
@@ -1338,6 +1349,10 @@ export default function EditorPage() {
   const [style, setStyle] = useState<SubtitleStyle>(DEFAULT_SUBTITLE_STYLE);
   const [activePreset, setActivePreset] = useState<string | null>(null);
   const [customizePanelOpen, setCustomizePanelOpen] = useState(false);
+  const [userSubtitlePresets, setUserSubtitlePresets] = useState<
+    SavedSubtitlePresetRecord[]
+  >([]);
+  const [newUserPresetName, setNewUserPresetName] = useState("");
   /** Weights supported by the currently selected font (for Google Fonts). */
   const [availableWeights, setAvailableWeights] = useState<number[]>([
     400, 700,
@@ -2511,8 +2526,185 @@ export default function EditorPage() {
     };
   }, [style.fontFamily, style.fontWeight]);
 
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        let res = await fetch("/api/subtitle-presets", {
+          credentials: "same-origin",
+        });
+        if (!res.ok) {
+          if (res.status === 401 && !cancelled) {
+            setUserSubtitlePresets(loadUserSubtitlePresets());
+          }
+          return;
+        }
+        let data = (await res.json()) as {
+          presets?: SavedSubtitlePresetRecord[];
+        };
+        let list = data.presets ?? [];
+        if (list.length === 0) {
+          await migrateLocalSubtitlePresetsToServer();
+          res = await fetch("/api/subtitle-presets", {
+            credentials: "same-origin",
+          });
+          if (res.ok) {
+            data = (await res.json()) as {
+              presets?: SavedSubtitlePresetRecord[];
+            };
+            list = data.presets ?? [];
+          }
+        }
+        if (!cancelled) setUserSubtitlePresets(list);
+      } catch {
+        if (!cancelled) setUserSubtitlePresets(loadUserSubtitlePresets());
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const userPresetChoices = useMemo(
+    () => userSubtitlePresets.map(savedRecordToApplyPresetShape),
+    [userSubtitlePresets]
+  );
+
+  const allSubtitlePresetChoices = useMemo((): SubtitlePresetForApply[] => {
+    const builtIn: SubtitlePresetForApply[] = PRESET_STYLES.map((p) => ({
+      id: p.id,
+      name: p.name,
+      preview: p.preview,
+      style: p.style,
+      subtitleMode: p.subtitleMode,
+      maxWordsPerSegment: p.maxWordsPerSegment,
+      highlightColor: p.highlightColor,
+    }));
+    return [...builtIn, ...userPresetChoices];
+  }, [userPresetChoices]);
+
+  const activePresetDisplayName = useMemo(() => {
+    if (!activePreset) return null;
+    return (
+      allSubtitlePresetChoices.find((p) => p.id === activePreset)?.name ?? null
+    );
+  }, [activePreset, allSubtitlePresetChoices]);
+
+  const saveCurrentSubtitlePreset = useCallback(async () => {
+    const name = newUserPresetName.trim().slice(0, 48);
+    if (!name) {
+      toast({
+        variant: "destructive",
+        title: "Name required",
+        description: "Enter a name for your preset.",
+      });
+      return;
+    }
+    if (userSubtitlePresets.length >= MAX_USER_SUBTITLE_PRESETS) {
+      toast({
+        variant: "destructive",
+        title: "Preset limit",
+        description: `You can save up to ${MAX_USER_SUBTITLE_PRESETS} custom presets. Delete one to add another.`,
+      });
+      return;
+    }
+    try {
+      const res = await fetch("/api/subtitle-presets", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name,
+          style: { ...style },
+          subtitleMode,
+          maxWordsPerSegment,
+          highlightColor,
+          preview: previewFromSubtitleStyle(style),
+        }),
+      });
+      const payload = (await res.json().catch(() => ({}))) as {
+        error?: string;
+        preset?: SavedSubtitlePresetRecord;
+      };
+      if (!res.ok) {
+        toast({
+          variant: "destructive",
+          title: "Could not save preset",
+          description: payload.error ?? `Error ${res.status}`,
+        });
+        return;
+      }
+      if (!payload.preset) {
+        toast({
+          variant: "destructive",
+          title: "Could not save preset",
+          description: "Invalid response from server.",
+        });
+        return;
+      }
+      setUserSubtitlePresets((prev) => [...prev, payload.preset!]);
+      setNewUserPresetName("");
+      setActivePreset(payload.preset.id);
+      toast({
+        title: "Preset saved",
+        description: `"${name}" is synced to your account.`,
+      });
+    } catch {
+      toast({
+        variant: "destructive",
+        title: "Could not save preset",
+        description: "Network error. Try again.",
+      });
+    }
+  }, [
+    newUserPresetName,
+    userSubtitlePresets.length,
+    style,
+    subtitleMode,
+    maxWordsPerSegment,
+    highlightColor,
+  ]);
+
+  const deleteUserSubtitlePreset = useCallback(
+    async (id: string, e?: React.MouseEvent) => {
+      e?.preventDefault();
+      e?.stopPropagation();
+      if (!isUserSavedPresetId(id)) return;
+      try {
+        const res = await fetch(
+          `/api/subtitle-presets/${encodeURIComponent(id)}`,
+          {
+            method: "DELETE",
+            credentials: "same-origin",
+          }
+        );
+        if (!res.ok) {
+          const payload = (await res.json().catch(() => ({}))) as {
+            error?: string;
+          };
+          toast({
+            variant: "destructive",
+            title: "Could not delete preset",
+            description: payload.error ?? `Error ${res.status}`,
+          });
+          return;
+        }
+        setUserSubtitlePresets((prev) => prev.filter((p) => p.id !== id));
+        if (activePreset === id) setActivePreset(null);
+        toast({ title: "Preset removed" });
+      } catch {
+        toast({
+          variant: "destructive",
+          title: "Could not delete preset",
+          description: "Network error. Try again.",
+        });
+      }
+    },
+    [activePreset]
+  );
+
   const applyPreset = useCallback(
-    (preset: (typeof PRESET_STYLES)[0]) => {
+    (preset: SubtitlePresetForApply) => {
       setStyle((prev) => ({ ...prev, ...preset.style }));
       if (preset.maxWordsPerSegment !== undefined)
         setMaxWordsPerSegment(preset.maxWordsPerSegment);
@@ -3434,10 +3626,7 @@ export default function EditorPage() {
                 >
                   <Pencil className="size-4" />
                   Customize{" "}
-                  {activePreset
-                    ? (PRESET_STYLES.find((p) => p.id === activePreset)?.name ??
-                      "style")
-                    : "style"}
+                  {activePresetDisplayName ?? "style"}
                 </Button>
                 {/* Presets + Customize button (visible when panel closed) */}
                 <div className="flex-1 min-h-0 overflow-y-auto">
@@ -3446,28 +3635,54 @@ export default function EditorPage() {
                       Style Presets
                     </Label>
                     <div className="grid grid-cols-2 gap-2">
-                      {PRESET_STYLES.map((preset) => (
-                        <Button
-                          key={preset.id}
-                          onClick={() => applyPreset(preset)}
-                          variant="preset"
-                          className="p-6"
-                        >
-                          <div
-                            className="rounded px-2 py-1 text-xs font-bold"
-                            style={{
-                              color: preset.preview.color,
-                              backgroundColor: preset.preview.bg,
-                              textShadow: preset.preview.stroke
-                                ? `1px 1px 0 ${preset.preview.stroke}, -1px -1px 0 ${preset.preview.stroke}, 1px -1px 0 ${preset.preview.stroke}, -1px 1px 0 ${preset.preview.stroke}`
-                                : "none",
-                            }}
+                      {allSubtitlePresetChoices.map((preset) => (
+                        <div key={preset.id} className="relative">
+                          <Button
+                            onClick={() => applyPreset(preset)}
+                            variant="preset"
+                            className="h-auto w-full p-6 pr-8"
                           >
-                            {preset.name}
-                          </div>
-                        </Button>
+                            <div
+                              className="rounded px-2 py-1 text-xs font-bold"
+                              style={{
+                                color: preset.preview.color,
+                                backgroundColor: preset.preview.bg,
+                                textShadow: preset.preview.stroke
+                                  ? `1px 1px 0 ${preset.preview.stroke}, -1px -1px 0 ${preset.preview.stroke}, 1px -1px 0 ${preset.preview.stroke}, -1px 1px 0 ${preset.preview.stroke}`
+                                  : "none",
+                              }}
+                            >
+                              {preset.name}
+                            </div>
+                          </Button>
+                          {isUserSavedPresetId(preset.id) ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0.5 top-0.5 size-7 shrink-0 text-muted-foreground hover:text-destructive"
+                              aria-label={`Delete preset ${preset.name}`}
+                              onClick={(ev) =>
+                                deleteUserSubtitlePreset(preset.id, ev)
+                              }
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          ) : null}
+                        </div>
                       ))}
                     </div>
+                    {userPresetChoices.length === 0 ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Open Customize, tune your look, then use{" "}
+                        <span className="font-medium">Save as preset</span> to
+                        add your own here.
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Custom presets are saved to your account.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -3486,16 +3701,44 @@ export default function EditorPage() {
                     )}
                   >
                     <div className="flex h-full flex-col overflow-y-auto p-4">
-                      <div className="mb-4 flex items-center justify-between">
+                      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setCustomizePanelOpen(false)}
-                          className="-ml-2"
+                          className="-ml-2 self-start"
                         >
                           <ArrowLeft className="mr-2 size-4" />
                           Back
                         </Button>
+                        <div className="flex w-full flex-col gap-2 sm:max-w-[280px] sm:flex-1">
+                          <Label className="text-xs text-muted-foreground">
+                            Save as preset
+                          </Label>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="My brand captions"
+                              value={newUserPresetName}
+                              onChange={(e) =>
+                                setNewUserPresetName(e.target.value)
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void saveCurrentSubtitlePreset();
+                                }
+                              }}
+                              className="flex-1"
+                            />
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={saveCurrentSubtitlePreset}
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        </div>
                       </div>
 
                       <Tabs defaultValue="font" className="w-full">
@@ -5804,10 +6047,7 @@ export default function EditorPage() {
                 >
                   <Pencil className="size-4" />
                   Customize{" "}
-                  {activePreset
-                    ? (PRESET_STYLES.find((p) => p.id === activePreset)?.name ??
-                      "style")
-                    : "style"}
+                  {activePresetDisplayName ?? "style"}
                 </Button>
                 {/* Presets + Customize button (visible when panel closed) */}
                 <div className="flex-1 min-h-0 overflow-y-auto">
@@ -5816,28 +6056,54 @@ export default function EditorPage() {
                       Style Presets
                     </Label>
                     <div className="grid grid-cols-2 gap-2">
-                      {PRESET_STYLES.map((preset) => (
-                        <Button
-                          key={preset.id}
-                          onClick={() => applyPreset(preset)}
-                          variant="preset"
-                          className="p-6"
-                        >
-                          <div
-                            className="rounded px-2 py-1 text-xs font-bold"
-                            style={{
-                              color: preset.preview.color,
-                              backgroundColor: preset.preview.bg,
-                              textShadow: preset.preview.stroke
-                                ? `1px 1px 0 ${preset.preview.stroke}, -1px -1px 0 ${preset.preview.stroke}, 1px -1px 0 ${preset.preview.stroke}, -1px 1px 0 ${preset.preview.stroke}`
-                                : "none",
-                            }}
+                      {allSubtitlePresetChoices.map((preset) => (
+                        <div key={preset.id} className="relative">
+                          <Button
+                            onClick={() => applyPreset(preset)}
+                            variant="preset"
+                            className="h-auto w-full p-6 pr-8"
                           >
-                            {preset.name}
-                          </div>
-                        </Button>
+                            <div
+                              className="rounded px-2 py-1 text-xs font-bold"
+                              style={{
+                                color: preset.preview.color,
+                                backgroundColor: preset.preview.bg,
+                                textShadow: preset.preview.stroke
+                                  ? `1px 1px 0 ${preset.preview.stroke}, -1px -1px 0 ${preset.preview.stroke}, 1px -1px 0 ${preset.preview.stroke}, -1px 1px 0 ${preset.preview.stroke}`
+                                  : "none",
+                              }}
+                            >
+                              {preset.name}
+                            </div>
+                          </Button>
+                          {isUserSavedPresetId(preset.id) ? (
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="absolute right-0.5 top-0.5 size-7 shrink-0 text-muted-foreground hover:text-destructive"
+                              aria-label={`Delete preset ${preset.name}`}
+                              onClick={(ev) =>
+                                deleteUserSubtitlePreset(preset.id, ev)
+                              }
+                            >
+                              <Trash2 className="size-3.5" />
+                            </Button>
+                          ) : null}
+                        </div>
                       ))}
                     </div>
+                    {userPresetChoices.length === 0 ? (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Open Customize, tune your look, then use{" "}
+                        <span className="font-medium">Save as preset</span> to
+                        add your own here.
+                      </p>
+                    ) : (
+                      <p className="mt-2 text-xs text-muted-foreground">
+                        Custom presets are saved to your account.
+                      </p>
+                    )}
                   </div>
                 </div>
 
@@ -5856,16 +6122,44 @@ export default function EditorPage() {
                     )}
                   >
                     <div className="flex h-full flex-col overflow-y-auto p-4">
-                      <div className="mb-4 flex items-center justify-between">
+                      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
                         <Button
                           variant="ghost"
                           size="sm"
                           onClick={() => setCustomizePanelOpen(false)}
-                          className="-ml-2"
+                          className="-ml-2 self-start"
                         >
                           <ArrowLeft className="mr-2 size-4" />
                           Back
                         </Button>
+                        <div className="flex w-full flex-col gap-2 sm:max-w-[280px] sm:flex-1">
+                          <Label className="text-xs text-muted-foreground">
+                            Save as preset
+                          </Label>
+                          <div className="flex gap-2">
+                            <Input
+                              placeholder="My brand captions"
+                              value={newUserPresetName}
+                              onChange={(e) =>
+                                setNewUserPresetName(e.target.value)
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") {
+                                  e.preventDefault();
+                                  void saveCurrentSubtitlePreset();
+                                }
+                              }}
+                              className="flex-1"
+                            />
+                            <Button
+                              type="button"
+                              variant="secondary"
+                              onClick={saveCurrentSubtitlePreset}
+                            >
+                              Save
+                            </Button>
+                          </div>
+                        </div>
                       </div>
 
                       <Tabs defaultValue="font" className="w-full">

@@ -81,3 +81,21 @@ export const users = pgTable('users', {
 
 export type AppUser = typeof users.$inferSelect;
 export type NewAppUser = typeof users.$inferInsert;
+
+/** User-defined subtitle style presets (editor). */
+export const subtitlePresets = pgTable(
+  'subtitle_presets',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id').notNull(),
+    name: text('name').notNull(),
+    /** JSON: preview, style, subtitleMode?, maxWordsPerSegment?, highlightColor? */
+    payload: jsonb('payload').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => [index('idx_subtitle_presets_user_id').on(table.userId)]
+);
+
+export type SubtitlePresetRow = typeof subtitlePresets.$inferSelect;
+export type NewSubtitlePresetRow = typeof subtitlePresets.$inferInsert;
