@@ -640,7 +640,7 @@ export function QuickStartCards({
         <SimpleUploadDialog
           onVideoSelect={handleSingleVideoSelect}
           title="Generate Subtitles"
-          description="MP4 or MOV, max 5 minutes, max size 500MB (audio extracted for transcription)"
+          description="MP4 or MOV, max 5 minutes."
           subscriptionGate={subscriptionGate}
           beforeOpen={subscriptionGate ? undefined : beforeOpenNewProject}
           trigger={

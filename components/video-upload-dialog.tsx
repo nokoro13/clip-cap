@@ -282,8 +282,7 @@ export function VideoUploadDialog({
                     </button>
                   </p>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    MP4 or MOV, max {describeMaxVideoDuration(maxDurationSeconds)} per file
-                    (YouTube max {describeMaxVideoDuration(maxDurationSeconds)}), max size 10GB
+                    MP4 or MOV, max {describeMaxVideoDuration(maxDurationSeconds)}.
                   </p>
                 </div>
               </div>

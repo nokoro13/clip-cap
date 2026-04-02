@@ -99,7 +99,7 @@ export function SubscribeDialog({
             <p className="text-sm text-muted-foreground">
               {upgrade
                 ? '50 AI subtitle uploads / month. Bulk Generate is not included.'
-                : '$14.99 per month. Perfect to get started.'}
+                : '$14.99 per month. 50 generate subtitles no access to bulk generate.'}
             </p>
             <Button variant="secondary" className="w-full" size="sm">
               {upgrade ? 'Manage Basic' : 'Get Basic'}
@@ -118,7 +118,7 @@ export function SubscribeDialog({
               </span>
             </div>
             <p className="text-sm text-muted-foreground">
-              $29.99 per month. 75 subtitle + 15 bulk uploads per month.
+              $29.99 per month. 75 generate subtitles + 15 bulk uploads per month.
             </p>
             <Button className="w-full" size="sm">
               {upgrade ? 'Upgrade to Premium' : 'Get Premium'}
