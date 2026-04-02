@@ -10,7 +10,7 @@ import {
   useMemo,
 } from "react";
 import { useSearchParams, useParams, useRouter } from "next/navigation";
-import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen, ChartNoAxesGantt, Play, Pause, GripHorizontal, Trash2 } from "lucide-react";
+import { X, Plus, Download, ArrowLeft, Palette, PanelLeftClose, PanelLeft, Captions, Type, Highlighter, SquareCenterlineDashedVerticalIcon, WandSparkles, Pencil, ChevronRight, ChevronDown, Award, PanelBottomClose, PanelBottomOpen, ChartNoAxesGantt, Play, Pause, GripHorizontal, Trash2, RotateCcw } from "lucide-react";
 import { ModeToggle } from "@/components/mode-toggle";
 import {
   SubtitleComposition,
@@ -128,6 +128,33 @@ function persistPayloadDigest(payload: {
     e: payload.editorState,
   });
 }
+
+function cloneViaJson<T>(v: T): T {
+  return JSON.parse(JSON.stringify(v)) as T;
+}
+
+/** Snapshot of editor state taken once after initial load; used for “reset to how it opened”. */
+type EditorRecoverableBaseline = {
+  subtitles: EnhancedSubtitle[];
+  segmentSubtitles: Subtitle[];
+  wordSubtitles: Subtitle[];
+  rawSegmentSubtitles: Subtitle[];
+  subtitleMode: SubtitleMode;
+  style: SubtitleStyle;
+  highlightColor: string;
+  maxWordsPerSegment: number;
+  videoTransform: VideoTransform;
+  videoAspectRatio: number;
+  splitScreenConfig: SplitScreenConfig;
+  videoSegments: VideoSegment[];
+  deletedRanges: DeletedRange[];
+  customTextTracks: CustomTextTrack[];
+  customTextSegments: CustomTextSegment[];
+  bannerTracks: BannerTrack[];
+  bannerSegments: BannerSegment[];
+  videoDuration: number;
+  videoStartFrom: number;
+};
 
 /** Apply server `editorState` onto a project snapshot and expand flat timeline fields. */
 function mergeEditorStateIntoProjectSnapshot(
@@ -1500,8 +1527,12 @@ export default function EditorPage() {
   const editorRowExistsInDbRef = useRef(false);
   /** Last saved / hydrated digest; null until first persist effect after load establishes baseline. */
   const savedPayloadDigestBaselineRef = useRef<string | null>(null);
+  const editorRecoverableBaselineRef = useRef<EditorRecoverableBaseline | null>(null);
+  const editorBaselineReadyProjectIdRef = useRef<string | null>(null);
+  const [editorBaselineReady, setEditorBaselineReady] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  const [showResetEditorDialog, setShowResetEditorDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
   const [exportDownloadUrl, setExportDownloadUrl] = useState<string | null>(null);
@@ -2173,7 +2204,72 @@ export default function EditorPage() {
     setIsLoading(true);
     savedPayloadDigestBaselineRef.current = null;
     editorRowExistsInDbRef.current = false;
+    editorRecoverableBaselineRef.current = null;
+    editorBaselineReadyProjectIdRef.current = null;
+    setEditorBaselineReady(false);
   }, [params.id]);
+
+  // One-time baseline per project: state when the editor finished initial load (timeline, captions, overlays).
+  useEffect(() => {
+    if (isLoading) return;
+    const projectId = params.id as string;
+    if (editorBaselineReadyProjectIdRef.current === projectId) return;
+
+    const videoReady = Boolean(videoUrl && videoDuration > 0);
+    const segmentsReady = !videoReady || videoSegments.length > 0;
+    if (videoReady && !segmentsReady) return;
+
+    editorRecoverableBaselineRef.current = {
+      subtitles: cloneViaJson(subtitles),
+      segmentSubtitles: cloneViaJson(segmentSubtitles),
+      wordSubtitles: cloneViaJson(wordSubtitles),
+      rawSegmentSubtitles: cloneViaJson(rawSegmentSubtitles),
+      subtitleMode,
+      style: cloneViaJson(style),
+      highlightColor,
+      maxWordsPerSegment,
+      videoTransform: cloneViaJson(videoTransform),
+      videoAspectRatio,
+      splitScreenConfig: cloneViaJson(splitScreenConfig),
+      videoSegments: cloneViaJson(videoSegments),
+      deletedRanges: cloneViaJson(deletedRanges),
+      customTextTracks: cloneViaJson(customTextTracks),
+      customTextSegments: cloneViaJson(
+        customTextSegments.map(({ isDragging: _d, ...rest }) => rest)
+      ),
+      bannerTracks: cloneViaJson(bannerTracks),
+      bannerSegments: cloneViaJson(
+        bannerSegments.map(({ isDragging: _b, ...rest }) => rest)
+      ),
+      videoDuration,
+      videoStartFrom,
+    };
+    editorBaselineReadyProjectIdRef.current = projectId;
+    setEditorBaselineReady(true);
+  }, [
+    isLoading,
+    params.id,
+    videoUrl,
+    videoDuration,
+    videoSegments,
+    subtitles,
+    segmentSubtitles,
+    wordSubtitles,
+    rawSegmentSubtitles,
+    subtitleMode,
+    style,
+    highlightColor,
+    maxWordsPerSegment,
+    videoTransform,
+    videoAspectRatio,
+    splitScreenConfig,
+    deletedRanges,
+    customTextTracks,
+    customTextSegments,
+    bannerTracks,
+    bannerSegments,
+    videoStartFrom,
+  ]);
 
   useLayoutEffect(() => {
     if (shouldUseShareSheetForExport()) {
@@ -2389,6 +2485,53 @@ export default function EditorPage() {
     savedPayloadDigestBaselineRef.current = null;
     router.push(backHref);
   };
+
+  const applyEditorBaseline = useCallback(() => {
+    const b = editorRecoverableBaselineRef.current;
+    if (!b) {
+      toast({
+        variant: "destructive",
+        title: "Can’t reset yet",
+        description: "Wait for the editor to finish loading.",
+      });
+      return;
+    }
+    setSubtitles(cloneViaJson(b.subtitles));
+    setSegmentSubtitles(cloneViaJson(b.segmentSubtitles));
+    setWordSubtitles(cloneViaJson(b.wordSubtitles));
+    setRawSegmentSubtitles(cloneViaJson(b.rawSegmentSubtitles));
+    setSubtitleMode(b.subtitleMode);
+    setStyle(cloneViaJson(b.style));
+    setHighlightColor(b.highlightColor);
+    setMaxWordsPerSegment(b.maxWordsPerSegment);
+    setVideoTransform(cloneViaJson(b.videoTransform));
+    setVideoAspectRatio(b.videoAspectRatio);
+    setSplitScreenConfig(cloneViaJson(b.splitScreenConfig));
+    setVideoSegments(cloneViaJson(b.videoSegments));
+    setDeletedRanges(cloneViaJson(b.deletedRanges));
+    setCustomTextTracks(cloneViaJson(b.customTextTracks));
+    setCustomTextSegments(
+      cloneViaJson(b.customTextSegments).map((s) => ({ ...s, isDragging: false }))
+    );
+    setBannerTracks(cloneViaJson(b.bannerTracks));
+    setBannerSegments(
+      cloneViaJson(b.bannerSegments).map((s) => ({ ...s, isDragging: false }))
+    );
+    setVideoDuration(b.videoDuration);
+    setVideoStartFrom(b.videoStartFrom);
+    savedPayloadDigestBaselineRef.current = null;
+    setActivePreset(null);
+    setSelectedSubtitle(null);
+    setSelectedVideoSegment(null);
+    setSelectedTextSegment(null);
+    setSelectedBannerSegment(null);
+    setPlayerOverlaySelectedId(null);
+    toast({
+      variant: "success",
+      title: "Editor reset",
+      description: "Restored this clip to how it looked when you opened it.",
+    });
+  }, []);
 
   // Load video dimensions when videoUrl changes so 9:16 is detected for crop
   useEffect(() => {
@@ -3497,6 +3640,32 @@ export default function EditorPage() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      <AlertDialog open={showResetEditorDialog} onOpenChange={setShowResetEditorDialog}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Reset editor?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This restores the timeline, captions, trims, text overlays, banners, and styling to how
+              they were when you opened this clip in this session (including anything already loaded
+              from your last save).
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="flex-col gap-2 sm:flex-row sm:justify-end">
+            <AlertDialogCancel type="button">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              type="button"
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+              onClick={(e) => {
+                e.preventDefault();
+                setShowResetEditorDialog(false);
+                applyEditorBaseline();
+              }}
+            >
+              Reset
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {/* Header - relative z-10 so back stays clickable */}
       <header className="relative z-10 flex shrink-0 items-center justify-between border-b border-border px-6 py-3">
         <div className="flex items-center gap-4">
@@ -3508,6 +3677,18 @@ export default function EditorPage() {
           >
             <ArrowLeft className="size-5" />
           </button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            disabled={!editorBaselineReady}
+            title="Restore timeline and captions to when you opened this clip"
+            onClick={() => setShowResetEditorDialog(true)}
+          >
+            <RotateCcw className="size-4" />
+            Reset edits
+          </Button>
         </div>
         <div className="flex items-center gap-2">
           <ModeToggle />
@@ -3640,7 +3821,7 @@ export default function EditorPage() {
                           <Button
                             onClick={() => applyPreset(preset)}
                             variant="preset"
-                            className="h-auto w-full p-6 pr-8"
+                            className="h-auto w-full p-4"
                           >
                             <div
                               className="rounded px-2 py-1 text-xs font-bold"
