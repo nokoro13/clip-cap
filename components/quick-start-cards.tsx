@@ -22,7 +22,7 @@ import { saveVideoBlob } from '@/lib/video-storage';
 import { uploadVideoToS3 } from '@/lib/upload-video-s3';
 import { toast } from '@/hooks/use-toast';
 
-const DEFAULT_BASIC_CHECKOUT_URL = 'https://whop.com/checkout/plan_xtThkvdruzGaa';
+const DEFAULT_BASIC_CHECKOUT_URL = 'https://whop.com/checkout/plan_ZQ9zmyo6thEWG';
 const DEFAULT_PREMIUM_CHECKOUT_URL = 'https://whop.com/checkout/plan_OHjnjQ68gcbct';
 
 interface QuickStartCardsProps {

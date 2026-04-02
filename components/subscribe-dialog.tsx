@@ -12,7 +12,7 @@ import {
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 
-const DEFAULT_BASIC_CHECKOUT_URL = 'https://whop.com/checkout/plan_xtThkvdruzGaa';
+const DEFAULT_BASIC_CHECKOUT_URL = 'https://whop.com/checkout/plan_ZQ9zmyo6thEWG';
 const DEFAULT_PREMIUM_CHECKOUT_URL = 'https://whop.com/checkout/plan_OHjnjQ68gcbct';
 
 export type SubscribeIntent = 'subscribe' | 'upgrade_to_premium';

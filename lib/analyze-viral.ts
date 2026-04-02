@@ -1,5 +1,6 @@
 import { openAiWhisperApiToCaptions } from '@remotion/openai-whisper';
 import type { Caption } from '@remotion/captions';
+import type OpenAI from 'openai';
 import { openai } from '@/lib/openai';
 import { getFileForWhisper } from '@/lib/extract-audio';
 import {
@@ -175,8 +176,8 @@ const VIRAL_SINGLE_CALL_MAX_INPUT_TOKENS_ESTIMATE = 18_000;
 const VIRAL_SINGLE_PASS_MAX_TRANSCRIPT_CHARS = 28_000;
 
 const VIRAL_WINDOW_SECONDS = 600;
-/** Step < window so max 90s clips always fit entirely in at least one window (600 - 480 = 120s overlap). */
-const VIRAL_WINDOW_STEP_SECONDS = 480;
+/** Step < window so max 90s clips always fit entirely in at least one window (600 - 540 = 60s overlap). */
+const VIRAL_WINDOW_STEP_SECONDS = 540;
 const VIRAL_WINDOW_CONTEXT_PAD_SECONDS = 45;
 const VIRAL_WINDOW_MAX_CLIPS = 6;
 const VIRAL_WINDOW_MAX_OUTPUT_TOKENS = 3500;
@@ -194,10 +195,40 @@ type ViralMoment = {
   topic?: string;
 };
 
+/** Whisper segment row for GPT (one line per speech segment — far fewer tokens than word-by-word). */
+export type TranscriptSegmentRow = {
+  startMs: number;
+  endMs: number;
+  text: string;
+};
+
 function buildTranscriptWithTimestamps(captions: Caption[]): string {
   return captions
     .map((c) => `[${formatSeconds(c.startMs / 1000)}] ${c.text}`)
     .join('\n');
+}
+
+/** Segment-anchored transcript for viral detection (reduces input tokens vs per-word lines). */
+function buildTranscriptFromSegmentRows(segments: TranscriptSegmentRow[]): string {
+  if (segments.length === 0) return '';
+  return segments
+    .map((s) => {
+      const startSec = s.startMs / 1000;
+      const endSec = s.endMs / 1000;
+      return `[${formatSeconds(startSec)}-${formatSeconds(endSec)}] ${s.text.trim()}`;
+    })
+    .join('\n');
+}
+
+function buildTranscriptSliceFromSegmentRows(
+  segments: TranscriptSegmentRow[],
+  sliceStartSec: number,
+  sliceEndSec: number
+): string {
+  const fromMs = sliceStartSec * 1000;
+  const toMs = sliceEndSec * 1000;
+  const slice = segments.filter((s) => s.endMs > fromMs && s.startMs < toMs);
+  return buildTranscriptFromSegmentRows(slice);
 }
 
 /** Transcript lines for captions overlapping [sliceStartSec, sliceEndSec] (absolute timeline). */
@@ -210,6 +241,83 @@ function buildTranscriptSlice(
   const toMs = sliceEndSec * 1000;
   const slice = captions.filter((c) => c.endMs > fromMs && c.startMs < toMs);
   return buildTranscriptWithTimestamps(slice);
+}
+
+/** Prefer Whisper segments for GPT; fall back to word captions if no segments. */
+function buildGptTranscriptSlice(
+  segmentRows: TranscriptSegmentRow[],
+  captions: Caption[],
+  sliceStartSec: number,
+  sliceEndSec: number
+): string {
+  if (segmentRows.length > 0) {
+    return buildTranscriptSliceFromSegmentRows(segmentRows, sliceStartSec, sliceEndSec);
+  }
+  return buildTranscriptSlice(captions, sliceStartSec, sliceEndSec);
+}
+
+function buildGptFullTranscript(
+  segmentRows: TranscriptSegmentRow[],
+  captions: Caption[]
+): string {
+  if (segmentRows.length > 0) {
+    return buildTranscriptFromSegmentRows(segmentRows);
+  }
+  return buildTranscriptWithTimestamps(captions);
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function isOpenAiRateLimitError(e: unknown): boolean {
+  if (e && typeof e === 'object' && 'status' in e) {
+    const st = (e as { status?: number }).status;
+    if (st === 429) return true;
+  }
+  const msg = e instanceof Error ? e.message : String(e);
+  return /\b429\b/.test(msg) || /rate limit/i.test(msg);
+}
+
+/** Parse "try again in 4.588s" from OpenAI error messages. */
+function parseSuggestedRetryDelayMs(message: string): number | null {
+  const m = message.match(/try again in ([\d.]+)\s*s/i);
+  if (!m) return null;
+  const sec = parseFloat(m[1]);
+  if (!Number.isFinite(sec)) return null;
+  return Math.min(60_000, Math.max(500, Math.ceil(sec * 1000)));
+}
+
+const VIRAL_CHAT_MAX_ATTEMPTS = 4;
+
+async function chatCompletionViralWithRetry(
+  params: OpenAI.Chat.ChatCompletionCreateParamsNonStreaming,
+  logLabel: string
+): Promise<OpenAI.Chat.ChatCompletion> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < VIRAL_CHAT_MAX_ATTEMPTS; attempt++) {
+    try {
+      return await openai.chat.completions.create({
+        ...params,
+        stream: false,
+      });
+    } catch (e) {
+      lastError = e;
+      const retryable = isOpenAiRateLimitError(e) && attempt < VIRAL_CHAT_MAX_ATTEMPTS - 1;
+      if (!retryable) {
+        throw e;
+      }
+      const msg = e instanceof Error ? e.message : String(e);
+      const suggested = parseSuggestedRetryDelayMs(msg);
+      const backoffMs =
+        suggested ?? Math.min(30_000, 2000 * 2 ** attempt);
+      console.warn(
+        `[analyze-viral] ${logLabel}: rate limited (attempt ${attempt + 1}/${VIRAL_CHAT_MAX_ATTEMPTS}), retrying in ${backoffMs}ms`
+      );
+      await sleep(backoffMs);
+    }
+  }
+  throw lastError;
 }
 
 function planAbsoluteWindows(durationSec: number): Array<{ strictStart: number; strictEnd: number }> {
@@ -274,15 +382,18 @@ function dedupeViralMoments(moments: ViralMoment[]): ViralMoment[] {
 }
 
 async function fetchViralMomentsSinglePass(userPrompt: string): Promise<ViralMoment[]> {
-  const gptResponse = await openai.chat.completions.create({
-    model: 'gpt-4o',
-    messages: [
-      { role: 'system', content: VIRAL_DETECTION_PROMPT },
-      { role: 'user', content: userPrompt },
-    ],
-    temperature: 0.5,
-    max_tokens: 8000,
-  });
+  const gptResponse = await chatCompletionViralWithRetry(
+    {
+      model: 'gpt-4o',
+      messages: [
+        { role: 'system', content: VIRAL_DETECTION_PROMPT },
+        { role: 'user', content: userPrompt },
+      ],
+      temperature: 0.5,
+      max_tokens: 8000,
+    },
+    'single-pass'
+  );
   const content = gptResponse.choices[0]?.message?.content;
   if (!content) {
     throw new Error('No response from AI analysis');
@@ -291,6 +402,7 @@ async function fetchViralMomentsSinglePass(userPrompt: string): Promise<ViralMom
 }
 
 async function fetchViralMomentsWindowed(
+  segmentRows: TranscriptSegmentRow[],
   captions: Caption[],
   duration: number,
   topicInstruction: string
@@ -299,7 +411,7 @@ async function fetchViralMomentsWindowed(
   const all: ViralMoment[] = [];
 
   console.log(
-    `[analyze-viral] Windowed gpt-4o: ${windows.length} window(s) for ${Math.round(duration)}s video`
+    `[analyze-viral] Windowed gpt-4o: ${windows.length} window(s) for ${Math.round(duration)}s video (GPT transcript: ${segmentRows.length > 0 ? `${segmentRows.length} segments` : `${captions.length} words`})`
   );
 
   for (let i = 0; i < windows.length; i++) {
@@ -310,7 +422,7 @@ async function fetchViralMomentsWindowed(
     const pad = VIRAL_WINDOW_CONTEXT_PAD_SECONDS;
     const sliceStart = Math.max(0, strictStart - pad);
     const sliceEnd = Math.min(duration, strictEnd + pad);
-    const excerpt = buildTranscriptSlice(captions, sliceStart, sliceEnd);
+    const excerpt = buildGptTranscriptSlice(segmentRows, captions, sliceStart, sliceEnd);
 
     const userPrompt = `WINDOW ${i + 1} of ${windows.length} (long video — other windows cover the rest).
 
@@ -333,15 +445,18 @@ Find the strongest viral moments in this time range only. Use absolute startSeco
     }
 
     try {
-      const gptResponse = await openai.chat.completions.create({
-        model: 'gpt-4o',
-        messages: [
-          { role: 'system', content: VIRAL_DETECTION_PROMPT },
-          { role: 'user', content: userPrompt },
-        ],
-        temperature: 0.5,
-        max_tokens: VIRAL_WINDOW_MAX_OUTPUT_TOKENS,
-      });
+      const gptResponse = await chatCompletionViralWithRetry(
+        {
+          model: 'gpt-4o',
+          messages: [
+            { role: 'system', content: VIRAL_DETECTION_PROMPT },
+            { role: 'user', content: userPrompt },
+          ],
+          temperature: 0.5,
+          max_tokens: VIRAL_WINDOW_MAX_OUTPUT_TOKENS,
+        },
+        `window ${i + 1}/${windows.length}`
+      );
       const content = gptResponse.choices[0]?.message?.content;
       if (!content) continue;
       const parsed = parseViralMomentsFromGptContent(content);
@@ -625,7 +740,17 @@ export async function analyzeViralFromInput(
     throw new Error('No file or audio URL provided');
   }
 
-  const transcriptWithTimestamps = buildTranscriptWithTimestamps(captions);
+  const transcriptSegmentRows: TranscriptSegmentRow[] = segmentCaptions.map((s) => ({
+    startMs: s.startMs,
+    endMs: s.endMs,
+    text: s.text,
+  }));
+
+  const gptTranscriptFull = buildGptFullTranscript(transcriptSegmentRows, captions);
+
+  console.log(
+    `[analyze-viral] GPT input transcript: ${transcriptSegmentRows.length} segment line(s), ${gptTranscriptFull.length} chars (~${roughInputTokenEstimate(gptTranscriptFull)} est. transcript tokens); word captions kept for clip boundaries`
+  );
 
   const totalWords = captions.map((c) => c.text).join(' ').split(/\s+/).filter(Boolean).length;
   const wordsPerMinute = duration > 0 ? Math.round((totalWords / duration) * 60) : 0;
@@ -639,8 +764,8 @@ export async function analyzeViralFromInput(
   const singlePassUserPrompt = `Video Duration: ${formatSeconds(duration)} (${duration} seconds)
 Transcript summary: ${totalWords} total words (~${wordsPerMinute} words/min). Each clip MUST have at least 12 words and ≥1.0 words/second—avoid segments with sparse dialog.
 
-Transcript:
-${transcriptWithTimestamps}
+Transcript (segment-anchored lines; timestamps are start–end of each speech segment in M:SS format):
+${gptTranscriptFull}
 ${topicInstruction}
 
 Find ${targetClips} viral moments from this content. Include clips scoring 60 or higher. For each clip: start when the topic begins, end ONLY when the topic is finished. If people are still talking about the subject, do NOT end the clip—extend it until they've moved on or concluded. Never cut mid-topic. Assign each clip a topic (educational, controversial, funny, wealth, inspirational, or story).
@@ -653,10 +778,15 @@ CRITICAL for title and reason: Follow the TITLE AND DESCRIPTION GENERATION PROCE
 
   const useWindowed =
     singleCallInputEstimate > VIRAL_SINGLE_CALL_MAX_INPUT_TOKENS_ESTIMATE ||
-    transcriptWithTimestamps.length > VIRAL_SINGLE_PASS_MAX_TRANSCRIPT_CHARS;
+    gptTranscriptFull.length > VIRAL_SINGLE_PASS_MAX_TRANSCRIPT_CHARS;
 
   const moments: ViralMoment[] = useWindowed
-    ? await fetchViralMomentsWindowed(captions, duration, topicInstruction)
+    ? await fetchViralMomentsWindowed(
+        transcriptSegmentRows,
+        captions,
+        duration,
+        topicInstruction
+      )
     : await fetchViralMomentsSinglePass(singlePassUserPrompt);
 
   const MIN_CLIP_SECONDS = 10;

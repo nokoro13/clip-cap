@@ -709,10 +709,10 @@ export default function ProjectGalleryPage() {
               )}
             </div>
           </div>
-          <Button variant="outline" className="flex-1 max-w-max">
+          {/* <Button variant="outline" className="flex-1 max-w-max">
             <Download className="mr-2 size-4" />
             Get clip manually
-          </Button>
+          </Button> */}
         </div>
       </header>
 
@@ -721,7 +721,7 @@ export default function ProjectGalleryPage() {
         <Tabs
           value={activeTab}
           onValueChange={(v) => setActiveTab(v as ClipStatus)}
-          className="mb-12"
+          className="mb-12 sm:mb-4"
         >
           <TabsList className='flex flex-wrap'>
             <TabsTrigger value="all">All ({clipCounts.all})</TabsTrigger>
