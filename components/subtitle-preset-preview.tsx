@@ -18,9 +18,15 @@ export function mergePresetToFullStyle(partial: Partial<SubtitleStyle>): Subtitl
   return { ...DEFAULT_SUBTITLE_STYLE, ...partial };
 }
 
+/** Keep preset chips readable; huge composition strokes need not fill the tiny preview. */
+const PREVIEW_MAX_STROKE_PX = 5;
+
 function buildTextShadows(style: SubtitleStyle, scale: number): string {
   const textShadows: string[] = [];
-  const sw = Math.max(0, Math.round(style.strokeWidth * scale));
+  const sw = Math.min(
+    PREVIEW_MAX_STROKE_PX,
+    Math.max(0, Math.round(style.strokeWidth * scale))
+  );
   const sc = style.strokeColor;
   if (sw > 0) {
     textShadows.push(
@@ -65,8 +71,21 @@ function boxBackground(style: SubtitleStyle): string {
   return `rgba(${r}, ${g}, ${b}, ${bgOpacity})`;
 }
 
-/** Scales composition font/padding to preset grid chips (~1080-based sizes → UI). */
-const PREVIEW_SCALE = 0.22;
+/**
+ * Effect scale for stroke/shadow/radius hints (composition values → chip).
+ * Font size & chip padding stay fixed so preset tiles share one height.
+ */
+const EFFECT_SCALE = 0.18;
+
+/** Fixed chip metrics — composition `fontSize` / `padding*` must not change tile size. */
+const GRID_CHIP_FONT_PX = 13;
+const GRID_CHIP_PAD_Y = 4;
+const GRID_CHIP_PAD_X = 8;
+/** Total preview strip height inside the preset button (single line, clipped). */
+const GRID_CHIP_BOX_PX = 36;
+const GRID_HI_PAD_Y = 1;
+const GRID_HI_PAD_X = 4;
+const GRID_HI_RADIUS = 3;
 
 function previewInner(
   mode: SubtitleMode,
@@ -79,33 +98,39 @@ function previewInner(
   const first = t.slice(0, mid);
   const second = t.slice(mid);
 
+  const innerRowStyle: CSSProperties = {
+    display: "inline-flex",
+    alignItems: "center",
+    justifyContent: "center",
+    lineHeight: 1,
+    maxWidth: "100%",
+    overflow: "hidden",
+  };
+
   if (mode === "segment-highlight") {
     return (
-      <>
+      <span style={innerRowStyle}>
         <span style={{ color: style.textColor }}>{first}</span>
         <span style={{ color: highlightColor }}>{second || "\u00a0"}</span>
-      </>
+      </span>
     );
   }
   if (mode === "segment-background-highlight") {
-    const scale = PREVIEW_SCALE;
-    const hiPadY = Math.max(1, Math.round(2 * scale));
-    const hiPadX = Math.max(2, Math.round(6 * scale));
-    const hiRadius = Math.max(2, Math.round(4 * scale));
     return (
-      <>
+      <span style={innerRowStyle}>
         <span style={{ color: style.textColor }}>{first}</span>
         <span
           style={{
             color: style.textColor,
             backgroundColor: highlightColor,
-            borderRadius: hiRadius,
-            padding: `${hiPadY}px ${hiPadX}px`,
+            borderRadius: GRID_HI_RADIUS,
+            padding: `${GRID_HI_PAD_Y}px ${GRID_HI_PAD_X}px`,
+            lineHeight: 1,
           }}
         >
           {second || "\u00a0"}
         </span>
-      </>
+      </span>
     );
   }
   return t;
@@ -119,32 +144,43 @@ export function SubtitlePresetPreviewChip({
   label: string;
 }) {
   const style = mergePresetToFullStyle(preset.style);
-  const scale = PREVIEW_SCALE;
   const mode: SubtitleMode = preset.subtitleMode ?? "segment-highlight";
   const highlightColor = preset.highlightColor ?? "#facc15";
 
   const inner = previewInner(mode, style, highlightColor, label);
 
   const spanStyle: CSSProperties = {
-    display: "inline-block",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    boxSizing: "border-box",
+    width: "100%",
+    minWidth: 0,
     maxWidth: "100%",
+    height: GRID_CHIP_BOX_PX,
+    minHeight: GRID_CHIP_BOX_PX,
+    maxHeight: GRID_CHIP_BOX_PX,
     color: style.textColor,
-    fontSize: Math.max(11, Math.round(style.fontSize * scale)),
+    fontSize: GRID_CHIP_FONT_PX,
     fontWeight: style.fontWeight,
     fontFamily: style.fontFamily,
     fontStyle: style.fontStyle ?? "normal",
-    lineHeight: style.lineHeight ?? 1.2,
+    lineHeight: 1,
     wordSpacing:
       style.wordSpacing != null
-        ? `${Math.max(0, Math.round(style.wordSpacing * scale))}px`
+        ? `${Math.max(0, Math.round(style.wordSpacing * EFFECT_SCALE))}px`
         : undefined,
-    textShadow: buildTextShadows(style, scale),
+    textShadow: buildTextShadows(style, EFFECT_SCALE),
     backgroundColor: boxBackground(style),
-    padding: `${Math.max(0, Math.round(style.paddingY * scale))}px ${Math.max(0, Math.round(style.paddingX * scale))}px`,
-    borderRadius: Math.max(0, Math.round(style.borderRadius * scale)),
+    padding: `${GRID_CHIP_PAD_Y}px ${GRID_CHIP_PAD_X}px`,
+    borderRadius: Math.min(
+      8,
+      Math.max(0, Math.round(style.borderRadius * EFFECT_SCALE))
+    ),
     whiteSpace: "nowrap",
     textOverflow: "ellipsis",
     overflow: "hidden",
+    textAlign: "center",
     textTransform: style.uppercase ? "uppercase" : undefined,
   };
 

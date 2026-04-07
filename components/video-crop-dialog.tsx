@@ -3,12 +3,15 @@
 import React, {
   useCallback,
   useEffect,
-  useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
-import { Crop, ZoomIn, ZoomOut } from "lucide-react";
+import { Crop, Grid3x3, RotateCcw, ZoomIn, ZoomOut } from "lucide-react";
+import {
+  getCoverDimensions,
+  paintCropToCanvas,
+} from "@/lib/crop-utils";
 import {
   Dialog,
   DialogContent,
@@ -27,9 +30,10 @@ export type VideoTransform = {
 
 // Min scale so full 16:9 video fits in 9:16 frame: coverWidth*scale <= 1080 => scale <= 1080/3413 ≈ 0.32
 const MIN_SCALE = 0.315;
-const MAX_SCALE = 3;
+const MAX_SCALE = 10;
 const SCALE_STEP = 0.1;
-const SCALE_STEP_SPLIT = 0.05;
+/** Multiplicative zoom per step in split landscape (approx. log-spaced). */
+const SPLIT_ZOOM_RATIO = 1.08;
 
 const VIDEO_ASPECT_LANDSCAPE = 16 / 9;
 const PORTRAIT_THRESHOLD = 0.7; // aspect width/height < this => 9:16
@@ -57,22 +61,6 @@ function landscapeCropFrameWidthPercentFor(
   return (compositionWidth / compositionHeight) * (9 / 16) * 100;
 }
 
-function coverDimensionsForComposition(
-  compositionWidth: number,
-  compositionHeight: number,
-  videoAspectRatio: number
-) {
-  const coverWidth =
-    compositionHeight * videoAspectRatio > compositionWidth
-      ? compositionHeight * videoAspectRatio
-      : compositionWidth;
-  const coverHeight =
-    compositionHeight * videoAspectRatio > compositionWidth
-      ? compositionHeight
-      : compositionWidth / videoAspectRatio;
-  return { coverWidth, coverHeight };
-}
-
 type VideoCropDialogProps = {
   open: boolean;
   onOpenChange: (open: boolean) => void;
@@ -98,7 +86,7 @@ function transformToFramePosition(
   compositionHeight: number,
   videoAspectRatio: number = VIDEO_ASPECT_LANDSCAPE
 ): { frameXPercent: number; frameYPercent: number; scale: number } {
-  const { coverWidth, coverHeight } = coverDimensionsForComposition(
+  const { coverWidth, coverHeight } = getCoverDimensions(
     compositionWidth,
     compositionHeight,
     videoAspectRatio
@@ -127,7 +115,7 @@ function framePositionToTransform(
   compositionHeight: number,
   videoAspectRatio: number = VIDEO_ASPECT_LANDSCAPE
 ): VideoTransform {
-  const { coverWidth, coverHeight } = coverDimensionsForComposition(
+  const { coverWidth, coverHeight } = getCoverDimensions(
     compositionWidth,
     compositionHeight,
     videoAspectRatio
@@ -149,7 +137,7 @@ function panRanges(
   compositionHeight: number,
   videoAspectRatio: number
 ) {
-  const { coverWidth, coverHeight } = coverDimensionsForComposition(
+  const { coverWidth, coverHeight } = getCoverDimensions(
     compositionWidth,
     compositionHeight,
     videoAspectRatio
@@ -282,13 +270,13 @@ export function VideoCropDialog({
 
   const effectiveMinScale = useMemo(() => {
     if (!splitMode) return MIN_SCALE;
-    const { coverWidth, coverHeight } = coverDimensionsForComposition(
+    const { coverWidth, coverHeight } = getCoverDimensions(
       compositionWidth,
       compositionHeight,
       effectiveAspect
     );
     return Math.max(
-      0.15,
+      0.1,
       Math.min(
         compositionWidth / coverWidth,
         compositionHeight / coverHeight
@@ -317,6 +305,7 @@ export function VideoCropDialog({
   const [frameXPercent, setFrameXPercent] = useState(initX);
   const [frameYPercent, setFrameYPercent] = useState(initY);
   const [isDragging, setIsDragging] = useState(false);
+  const [showSplitGrid, setShowSplitGrid] = useState(false);
   const dragStartRef = useRef<{
     x: number;
     y: number;
@@ -327,37 +316,91 @@ export function VideoCropDialog({
   } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
-  /** Realistic default so split preview math is never ~1×1 before layout (avoids “white dot” crop). */
-  const [containerSize, setContainerSize] = useState({ w: 560, h: 315 });
+  const splitCanvasRef = useRef<HTMLCanvasElement>(null);
 
-  useLayoutEffect(() => {
-    if (!open) return;
-    const el = containerRef.current;
-    if (!el) return;
-    const read = () => {
-      const r = el.getBoundingClientRect();
-      const w = r.width;
-      const h = r.height;
-      if (w < 2 || h < 2) return;
-      setContainerSize({ w, h });
+  /** Rule-of-thirds overlay on split canvas preview (composition pixels). */
+  const drawSplitGridOverlay = useCallback(
+    (ctx: CanvasRenderingContext2D, w: number, h: number) => {
+      ctx.save();
+      ctx.strokeStyle = "rgba(255,255,255,0.4)";
+      ctx.lineWidth = 2;
+      for (let i = 1; i < 3; i++) {
+        const x = (w * i) / 3;
+        const y = (h * i) / 3;
+        ctx.beginPath();
+        ctx.moveTo(x, 0);
+        ctx.lineTo(x, h);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(0, y);
+        ctx.lineTo(w, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!open || !splitMode || isPortrait || !videoUrl) {
+      return;
+    }
+    let raf = 0;
+    let stopped = false;
+    const tick = () => {
+      if (stopped) {
+        return;
+      }
+      raf = requestAnimationFrame(tick);
+      const video = videoRef.current;
+      const canvas = splitCanvasRef.current;
+      if (!video || !canvas || video.readyState < 2) {
+        return;
+      }
+      const ctx = canvas.getContext("2d");
+      if (!ctx) {
+        return;
+      }
+      const t = framePositionToTransform(
+        frameXPercent,
+        frameYPercent,
+        scale,
+        compositionWidth,
+        compositionHeight,
+        effectiveAspect
+      );
+      paintCropToCanvas(
+        ctx,
+        video,
+        compositionWidth,
+        compositionHeight,
+        t,
+        effectiveAspect,
+        isPortrait
+      );
+      if (showSplitGrid) {
+        drawSplitGridOverlay(ctx, compositionWidth, compositionHeight);
+      }
     };
-    read();
-    let raf1 = 0;
-    let raf2 = 0;
-    raf1 = requestAnimationFrame(() => {
-      read();
-      raf2 = requestAnimationFrame(read);
-    });
-    const ro = new ResizeObserver(read);
-    ro.observe(el);
+    raf = requestAnimationFrame(tick);
     return () => {
-      cancelAnimationFrame(raf1);
-      cancelAnimationFrame(raf2);
-      ro.disconnect();
+      stopped = true;
+      cancelAnimationFrame(raf);
     };
-  }, [open]);
-
-  const scaleStep = splitMode ? SCALE_STEP_SPLIT : SCALE_STEP;
+  }, [
+    open,
+    splitMode,
+    isPortrait,
+    videoUrl,
+    frameXPercent,
+    frameYPercent,
+    scale,
+    compositionWidth,
+    compositionHeight,
+    effectiveAspect,
+    showSplitGrid,
+    drawSplitGridOverlay,
+  ]);
 
   const handleVideoLoadedMetadata = useCallback(() => {
     const v = videoRef.current;
@@ -390,6 +433,12 @@ export function VideoCropDialog({
       }
     }
   }, [open, videoUrl, trimStartSeconds]);
+
+  useEffect(() => {
+    if (!open) {
+      setShowSplitGrid(false);
+    }
+  }, [open]);
 
   useEffect(() => {
     if (open) {
@@ -477,7 +526,7 @@ export function VideoCropDialog({
 
   const handleZoomIn = useCallback(() => {
     if (!splitMode || isPortrait) {
-      setScale((s) => Math.min(MAX_SCALE, s + scaleStep));
+      setScale((s) => Math.min(MAX_SCALE, s + SCALE_STEP));
       return;
     }
     const el = containerRef.current;
@@ -485,20 +534,14 @@ export function VideoCropDialog({
     const r = el.getBoundingClientRect();
     const W = Math.max(1, r.width);
     const H = Math.max(1, r.height);
-    const next = Math.min(MAX_SCALE, scale + scaleStep);
+    const next = Math.min(MAX_SCALE, scale * SPLIT_ZOOM_RATIO);
     if (next <= scale) return;
     applySplitZoom(next, W / 2, H / 2);
-  }, [
-    splitMode,
-    isPortrait,
-    scaleStep,
-    scale,
-    applySplitZoom,
-  ]);
+  }, [splitMode, isPortrait, scale, applySplitZoom]);
 
   const handleZoomOut = useCallback(() => {
     if (!splitMode || isPortrait) {
-      setScale((s) => Math.max(effectiveMinScale, s - scaleStep));
+      setScale((s) => Math.max(effectiveMinScale, s - SCALE_STEP));
       return;
     }
     const el = containerRef.current;
@@ -506,17 +549,10 @@ export function VideoCropDialog({
     const r = el.getBoundingClientRect();
     const W = Math.max(1, r.width);
     const H = Math.max(1, r.height);
-    const next = Math.max(effectiveMinScale, scale - scaleStep);
+    const next = Math.max(effectiveMinScale, scale / SPLIT_ZOOM_RATIO);
     if (next >= scale) return;
     applySplitZoom(next, W / 2, H / 2);
-  }, [
-    splitMode,
-    isPortrait,
-    scaleStep,
-    effectiveMinScale,
-    scale,
-    applySplitZoom,
-  ]);
+  }, [splitMode, isPortrait, effectiveMinScale, scale, applySplitZoom]);
 
   const handleWheel = useCallback(
     (e: React.WheelEvent) => {
@@ -531,25 +567,18 @@ export function VideoCropDialog({
       if (splitMode && !isPortrait) {
         const next =
           e.deltaY < 0
-            ? Math.min(MAX_SCALE, scale + scaleStep)
-            : Math.max(effectiveMinScale, scale - scaleStep);
+            ? Math.min(MAX_SCALE, scale * SPLIT_ZOOM_RATIO)
+            : Math.max(effectiveMinScale, scale / SPLIT_ZOOM_RATIO);
         if (next !== scale) applySplitZoom(next, fx, fy);
         return;
       }
 
       if (e.deltaY < 0)
-        setScale((s) => Math.min(MAX_SCALE, s + scaleStep));
+        setScale((s) => Math.min(MAX_SCALE, s + SCALE_STEP));
       else
-        setScale((s) => Math.max(effectiveMinScale, s - scaleStep));
+        setScale((s) => Math.max(effectiveMinScale, s - SCALE_STEP));
     },
-    [
-      splitMode,
-      isPortrait,
-      scale,
-      scaleStep,
-      effectiveMinScale,
-      applySplitZoom,
-    ]
+    [splitMode, isPortrait, scale, effectiveMinScale, applySplitZoom]
   );
 
   const handleFrameMouseDown = useCallback(
@@ -708,45 +737,11 @@ export function VideoCropDialog({
     onOpenChange(false);
   }, [onOpenChange]);
 
-  const splitVideoWrapperStyle = useMemo(() => {
-    if (!splitMode || isPortrait) return null;
-    const t = framePositionToTransform(
-      frameXPercent,
-      frameYPercent,
-      scale,
-      compositionWidth,
-      compositionHeight,
-      effectiveAspect
-    );
-    const { coverWidth, coverHeight } = coverDimensionsForComposition(
-      compositionWidth,
-      compositionHeight,
-      effectiveAspect
-    );
-    const W = Math.max(32, containerSize.w);
-    const H = Math.max(32, containerSize.h);
-    const u = Math.min(W / compositionWidth, H / compositionHeight);
-    return {
-      position: "absolute" as const,
-      left: "50%",
-      top: "50%",
-      width: coverWidth * scale * u,
-      height: coverHeight * scale * u,
-      transform: `translate(calc(-50% + ${t.offsetX * u}px), calc(-50% + ${t.offsetY * u}px))`,
-      zIndex: 1,
-    };
-  }, [
-    splitMode,
-    isPortrait,
-    frameXPercent,
-    frameYPercent,
-    scale,
-    compositionWidth,
-    compositionHeight,
-    effectiveAspect,
-    containerSize.w,
-    containerSize.h,
-  ]);
+  const handleResetCrop = useCallback(() => {
+    setScale(1);
+    setFrameXPercent(0.5);
+    setFrameYPercent(0.5);
+  }, []);
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -793,7 +788,37 @@ export function VideoCropDialog({
                 <>Scroll or pinch to zoom · drag the frame to pan</>
               )}
             </span>
-            <div className="flex items-center gap-1">
+            <div className="flex shrink-0 items-center gap-1">
+              <span className="min-w-[3.25rem] text-right text-xs tabular-nums text-foreground">
+                {Math.round(scale * 100)}%
+              </span>
+              {splitMode && !isPortrait ? (
+                <>
+                  <Button
+                    type="button"
+                    variant={showSplitGrid ? "secondary" : "ghost"}
+                    size="icon"
+                    className="size-8"
+                    onClick={() => setShowSplitGrid((g) => !g)}
+                    aria-pressed={showSplitGrid}
+                    aria-label="Toggle grid"
+                    title="Rule-of-thirds grid"
+                  >
+                    <Grid3x3 className="size-4" />
+                  </Button>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    className="size-8"
+                    onClick={handleResetCrop}
+                    aria-label="Reset crop to center"
+                    title="Reset pan & zoom"
+                  >
+                    <RotateCcw className="size-4" />
+                  </Button>
+                </>
+              ) : null}
               <Button
                 type="button"
                 variant="ghost"
@@ -811,7 +836,7 @@ export function VideoCropDialog({
                 size="icon"
                 className="size-8"
                 onClick={handleZoomIn}
-                disabled={scale >= MAX_SCALE}
+                disabled={scale >= MAX_SCALE - 1e-6}
                 aria-label="Zoom in"
               >
                 <ZoomIn className="size-4" />
@@ -866,22 +891,26 @@ export function VideoCropDialog({
                       }}
                     />
                   </>
-                ) : splitMode && splitVideoWrapperStyle ? (
+                ) : splitMode && !isPortrait ? (
                   <>
-                    <div
-                      className="will-change-transform"
-                      style={splitVideoWrapperStyle}
-                      onMouseDown={handleSplitPanMouseDown}
-                    >
-                      <video
-                        ref={videoRef}
-                        src={videoUrl}
-                        className="pointer-events-none absolute inset-0 h-full w-full bg-black object-cover"
-                        muted
-                        playsInline
-                        autoPlay
-                        onLoadedMetadata={handleVideoLoadedMetadata}
-                        onTimeUpdate={trimEndSeconds != null ? handleTimeUpdate : undefined}
+                    <video
+                      ref={videoRef}
+                      src={videoUrl}
+                      className="pointer-events-none absolute left-0 top-0 opacity-0"
+                      style={{ width: 4, height: 4 }}
+                      muted
+                      playsInline
+                      autoPlay
+                      onLoadedMetadata={handleVideoLoadedMetadata}
+                      onTimeUpdate={trimEndSeconds != null ? handleTimeUpdate : undefined}
+                    />
+                    <div className="absolute inset-0 z-10 flex items-center justify-center">
+                      <canvas
+                        ref={splitCanvasRef}
+                        width={compositionWidth}
+                        height={compositionHeight}
+                        className="max-h-full max-w-full cursor-grab object-contain active:cursor-grabbing"
+                        onMouseDown={handleSplitPanMouseDown}
                       />
                     </div>
                     <div

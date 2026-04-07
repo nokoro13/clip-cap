@@ -55,6 +55,10 @@ import {
   getWeightsFromFontInfo,
   isGoogleFont,
 } from "@/lib/google-fonts-list";
+import {
+  preloadGoogleFontsForSubtitlePresets,
+  preloadGoogleFontsForPickerList,
+} from "@/lib/google-fonts-preload";
 import type { Caption } from "@remotion/captions";
 import {
   Timeline,
@@ -1533,6 +1537,8 @@ export default function EditorPage() {
   const [editorBaselineReady, setEditorBaselineReady] = useState(false);
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [showSaveDialog, setShowSaveDialog] = useState(false);
+  /** When set, persist effect flushes localStorage then navigates (discard-without-save). */
+  const navigateAfterDiscardPersistRef = useRef<string | null>(null);
   const [showResetEditorDialog, setShowResetEditorDialog] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState<number | null>(null);
@@ -2381,6 +2387,12 @@ export default function EditorPage() {
     } catch {
       // ignore
     }
+    const pendingNav = navigateAfterDiscardPersistRef.current;
+    if (pendingNav) {
+      navigateAfterDiscardPersistRef.current = null;
+      setHasUnsavedChanges(false);
+      router.push(pendingNav);
+    }
   }, [
     params.id,
     isLoading,
@@ -2403,6 +2415,7 @@ export default function EditorPage() {
     subtitleMode,
     highlightColor,
     maxWordsPerSegment,
+    router,
   ]);
 
   // Warn before leaving page if there are unsaved changes
@@ -2479,22 +2492,16 @@ export default function EditorPage() {
     }
   };
 
-  const handleDontSave = () => {
-    setShowSaveDialog(false);
-    setHasUnsavedChanges(false);
-    apiSavePayloadRef.current = null;
-    savedPayloadDigestBaselineRef.current = null;
-    router.push(backHref);
-  };
-
-  const applyEditorBaseline = useCallback(() => {
+  const applyEditorBaseline = useCallback((opts?: { silent?: boolean }) => {
     const b = editorRecoverableBaselineRef.current;
     if (!b) {
-      toast({
-        variant: "destructive",
-        title: "Can’t reset yet",
-        description: "Wait for the editor to finish loading.",
-      });
+      if (!opts?.silent) {
+        toast({
+          variant: "destructive",
+          title: "Can’t reset yet",
+          description: "Wait for the editor to finish loading.",
+        });
+      }
       return;
     }
     setSubtitles(cloneViaJson(b.subtitles));
@@ -2527,12 +2534,35 @@ export default function EditorPage() {
     setSelectedTextSegment(null);
     setSelectedBannerSegment(null);
     setPlayerOverlaySelectedId(null);
-    toast({
-      variant: "success",
-      title: "Editor reset",
-      description: "Restored this clip to how it looked when you opened it.",
-    });
+    if (!opts?.silent) {
+      toast({
+        variant: "success",
+        title: "Editor reset",
+        description: "Restored this clip to how it looked when you opened it.",
+      });
+    }
   }, []);
+
+  const handleDontSave = () => {
+    setShowSaveDialog(false);
+    const baseline = editorRecoverableBaselineRef.current;
+    if (!baseline) {
+      setHasUnsavedChanges(false);
+      apiSavePayloadRef.current = null;
+      savedPayloadDigestBaselineRef.current = null;
+      router.push(backHref);
+      return;
+    }
+    navigateAfterDiscardPersistRef.current = backHref;
+    applyEditorBaseline({ silent: true });
+    window.setTimeout(() => {
+      if (navigateAfterDiscardPersistRef.current === backHref) {
+        navigateAfterDiscardPersistRef.current = null;
+        setHasUnsavedChanges(false);
+        router.push(backHref);
+      }
+    }, 400);
+  };
 
   // Load video dimensions when videoUrl changes so 9:16 is detected for crop
   useEffect(() => {
@@ -2733,6 +2763,43 @@ export default function EditorPage() {
       allSubtitlePresetChoices.find((p) => p.id === activePreset)?.name ?? null
     );
   }, [activePreset, allSubtitlePresetChoices]);
+
+  const subtitlePresetFontPreloadJobs = useMemo(
+    () =>
+      allSubtitlePresetChoices.map((preset) => {
+        const merged = { ...DEFAULT_SUBTITLE_STYLE, ...preset.style };
+        return {
+          fontFamily: merged.fontFamily,
+          fontWeight: merged.fontWeight,
+        };
+      }),
+    [allSubtitlePresetChoices]
+  );
+
+  /** Load Google Fonts for preset chips + picker when styling sidebar is visible (no click required). */
+  useEffect(() => {
+    const desktopStyling =
+      !leftPanelCollapsed && leftPanelTab === "styling";
+    const mobileStyling = mobilePanelTab === "styling";
+    if (!desktopStyling && !mobileStyling) {
+      return;
+    }
+    preloadGoogleFontsForSubtitlePresets(subtitlePresetFontPreloadJobs);
+    preloadGoogleFontsForPickerList();
+  }, [
+    leftPanelCollapsed,
+    leftPanelTab,
+    mobilePanelTab,
+    subtitlePresetFontPreloadJobs,
+  ]);
+
+  /** Customize panel can open over other tabs; ensure list fonts load when it opens too. */
+  useEffect(() => {
+    if (!customizePanelOpen) {
+      return;
+    }
+    preloadGoogleFontsForPickerList();
+  }, [customizePanelOpen]);
 
   const saveCurrentSubtitlePreset = useCallback(async () => {
     const name = newUserPresetName.trim().slice(0, 48);
@@ -3818,16 +3885,21 @@ export default function EditorPage() {
                     </Label>
                     <div className="grid grid-cols-2 gap-2">
                       {allSubtitlePresetChoices.map((preset) => (
-                        <div key={preset.id} className="relative">
+                        <div
+                          key={preset.id}
+                          className="relative flex h-[4rem]"
+                        >
                           <Button
                             onClick={() => applyPreset(preset)}
                             variant="preset"
-                            className="h-auto w-full p-4"
+                            className="relative flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden"
                           >
-                            <SubtitlePresetPreviewChip
-                              preset={preset}
-                              label={preset.name}
-                            />
+                            <span className="flex min-h-0 flex-1 items-center justify-center px-0.5">
+                              <SubtitlePresetPreviewChip
+                                preset={preset}
+                                label={preset.name}
+                              />
+                            </span>
                           </Button>
                           {isUserSavedPresetId(preset.id) ? (
                             <Button
@@ -6231,16 +6303,21 @@ export default function EditorPage() {
                     </Label>
                     <div className="grid grid-cols-2 gap-2">
                       {allSubtitlePresetChoices.map((preset) => (
-                        <div key={preset.id} className="relative">
+                        <div
+                          key={preset.id}
+                          className="relative flex h-[4rem]"
+                        >
                           <Button
                             onClick={() => applyPreset(preset)}
                             variant="preset"
-                            className="h-auto w-full p-6 pr-8"
+                            className="relative flex h-full min-h-0 w-full shrink-0 flex-col overflow-hidden"
                           >
-                            <SubtitlePresetPreviewChip
-                              preset={preset}
-                              label={preset.name}
-                            />
+                            <span className="flex min-h-0 flex-1 items-center justify-center px-0.5">
+                              <SubtitlePresetPreviewChip
+                                preset={preset}
+                                label={preset.name}
+                              />
+                            </span>
                           </Button>
                           {isUserSavedPresetId(preset.id) ? (
                             <Button
