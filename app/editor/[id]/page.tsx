@@ -3755,7 +3755,6 @@ export default function EditorPage() {
             onClick={() => setShowResetEditorDialog(true)}
           >
             <RotateCcw className="size-4" />
-            Reset edits
           </Button>
         </div>
         <div className="flex items-center gap-2">
