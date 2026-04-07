@@ -9,8 +9,9 @@ import {
 
 /**
  * Whop webhooks ([guide](https://docs.whop.com/developer/guides/webhooks)).
- * Subscribe to `membership.activated`, `membership.deactivated`, and `payment.succeeded`
- * for your app; request `webhook_receive:memberships` (and payment scopes as needed).
+ * Handles `membership.activated`, `membership.deactivated`, and `payment.succeeded`.
+ * Prefer a **company webhook** where possible (no `webhook_receive:*` app permissions).
+ * See docs/WHOP_MARKETPLACE.md for marketplace setup.
  */
 export async function POST(request: NextRequest): Promise<Response> {
 	const requestBodyText = await request.text();

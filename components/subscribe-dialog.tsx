@@ -125,6 +125,22 @@ export function SubscribeDialog({
             </Button>
           </a>
         </div>
+        <p className="border-t border-border pt-4 text-center text-xs text-muted-foreground leading-relaxed">
+          <strong className="font-medium text-foreground">Billing:</strong> Payments are
+          processed by Whop. When someone subscribes to access this app, they are charged on
+          Whop’s checkout for the plan and price shown in Whop (your creator dashboard may list
+          different pricing if you customize plans). Members can manage or cancel their
+          subscription anytime from their Whop account —{' '}
+          <a
+            href="https://whop.com/dashboard"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="font-medium text-primary underline underline-offset-2 hover:no-underline"
+          >
+            whop.com/dashboard
+          </a>
+          .
+        </p>
       </DialogContent>
     </Dialog>
   );

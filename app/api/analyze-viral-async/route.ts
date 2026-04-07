@@ -192,6 +192,9 @@ async function runAnalysisInBackground(
           )
         );
 
+      // Count bulk usage only after analysis completes successfully (Whop marketplace reliability).
+      await incrementUsage(userId, 'bulk');
+
       console.log(
         '[analyze-viral-async] Background job completed:',
         projectId,
@@ -333,8 +336,6 @@ export async function POST(request: NextRequest) {
     ).catch((e) => {
       console.error('[analyze-viral-async] Background promise rejected:', e);
     });
-
-    await incrementUsage(userId, 'bulk');
 
     console.log('[analyze-viral-async] Job queued for', projectId);
 

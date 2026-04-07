@@ -35,3 +35,7 @@ a
 
 
 For more info, see our docs at https://dev.whop.com/introduction
+
+## Whop marketplace (webhooks & permissions)
+
+For resubmitting to the Whop app store: company webhooks, permissions to remove, and billing notes — see [docs/WHOP_MARKETPLACE.md](docs/WHOP_MARKETPLACE.md).
