@@ -1,11 +1,10 @@
 import type { BillingReasons } from '@whop/sdk/resources/payments.js';
 import type { Membership, Payment } from '@whop/sdk/resources.js';
-import { USAGE_PERIOD_MS } from '@/lib/access-limits';
 import { whopsdk } from '@/lib/whop-sdk';
 import {
   accessLevelForTrackedProduct,
   isTrackedWhopProductId,
-  renewalEpochToDate,
+  parseWhopRenewalBoundary,
   resetUsageForNewPeriod,
   resolveAccessFromWhop,
   syncUserRowFromWhopAccess,
@@ -36,23 +35,22 @@ async function resolveMembershipUserId(membership: Membership): Promise<string |
 async function resolveBillingWindow(
   membership: Membership,
   options?: { fallbackStart?: Date },
-): Promise<{ periodStart: Date; periodEnd: Date }> {
-  let periodStart = renewalEpochToDate(membership.renewal_period_start);
-  let periodEnd = renewalEpochToDate(membership.renewal_period_end);
+): Promise<{ periodStart: Date; periodEnd: Date | null }> {
+  let periodStart = parseWhopRenewalBoundary(membership.renewal_period_start);
+  let periodEnd = parseWhopRenewalBoundary(membership.renewal_period_end);
 
   if (periodStart == null || periodEnd == null) {
     try {
       const full = await whopsdk.memberships.retrieve(membership.id);
-      periodStart = renewalEpochToDate(full.renewal_period_start) ?? periodStart;
-      periodEnd = renewalEpochToDate(full.renewal_period_end) ?? periodEnd;
+      periodStart = parseWhopRenewalBoundary(full.renewal_period_start) ?? periodStart;
+      periodEnd = parseWhopRenewalBoundary(full.renewal_period_end) ?? periodEnd;
     } catch (err) {
       console.warn('[whop webhook] memberships.retrieve failed (billing window)', membership.id, err);
     }
   }
 
   const start = periodStart ?? options?.fallbackStart ?? new Date();
-  const end = periodEnd ?? new Date(start.getTime() + USAGE_PERIOD_MS);
-  return { periodStart: start, periodEnd: end };
+  return { periodStart: start, periodEnd: periodEnd };
 }
 
 /**

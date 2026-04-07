@@ -27,12 +27,24 @@ function getProductIds(): { premiumProductId: string; basicProductId: string | n
   return { premiumProductId, basicProductId };
 }
 
-/** Whop sends renewal boundaries as Unix seconds (string). */
+/**
+ * Whop `renewal_period_*`: API often uses Unix seconds (string); webhooks may send ISO 8601.
+ */
+export function parseWhopRenewalBoundary(value: string | null | undefined): Date | null {
+  if (value == null || value === '') return null;
+  const trimmed = String(value).trim();
+  const n = Number(trimmed);
+  if (Number.isFinite(n)) {
+    const ms = n > 1e12 ? n : n * 1000;
+    return new Date(ms);
+  }
+  const ms = Date.parse(trimmed);
+  return Number.isNaN(ms) ? null : new Date(ms);
+}
+
+/** @deprecated Prefer parseWhopRenewalBoundary — handles ISO and Unix seconds. */
 export function renewalEpochToDate(epoch: string | null | undefined): Date | null {
-  if (epoch == null || epoch === '') return null;
-  const n = Number(epoch);
-  if (!Number.isFinite(n)) return null;
-  return new Date(n * 1000);
+  return parseWhopRenewalBoundary(epoch);
 }
 
 export function isTrackedWhopProductId(productId: string | null | undefined): boolean {
@@ -65,8 +77,16 @@ export async function resolveAccessFromWhop(userId: string): Promise<AccessLevel
   return null;
 }
 
-function periodExpired(periodStart: Date): boolean {
+/** Legacy rows without `currentPeriodEnd` (pre-webhook): rolling 30-day window. */
+function legacyPeriodExpired(periodStart: Date): boolean {
   return Date.now() - periodStart.getTime() >= USAGE_PERIOD_MS;
+}
+
+function periodNeedsReset(row: AppUser): boolean {
+  if (row.currentPeriodEnd != null) {
+    return Date.now() >= row.currentPeriodEnd.getTime();
+  }
+  return legacyPeriodExpired(row.currentPeriodStart);
 }
 
 /**
@@ -102,10 +122,12 @@ export async function ensureUserSynced(userId: string): Promise<AppUser | null> 
   }
 
   let row = existing[0]!;
-  let needsReset = periodExpired(row.currentPeriodStart);
+  const needsReset = periodNeedsReset(row);
   const accessChanged = row.accessLevel !== accessLevel;
 
   if (needsReset) {
+    // Usage cycle cleared at Whop's renewal_period_end. Next exact window comes from
+    // membership.activated / payment.succeeded; until then end stays null (legacy rollover).
     await db
       .update(users)
       .set({
